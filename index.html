@@ -152,8 +152,8 @@ const VK = {
       return (r && r.result === false) ? 'closed' : 'reward';
     } catch (e) { return 'error'; }
   },
-  event (name, data) {
-    console.log('%c[event] ' + name, 'color:#B9452C', data || {});
+    event (name, data) {
+    if (!this.ready) console.log('%c[event] ' + name, 'color:#B9452C', data || {});
     if (this.ready && this.bridge) {
       try {
         const p = this.bridge.send('VKWebAppSendEvent', Object.assign({ event: name }, data || {}));
@@ -527,6 +527,60 @@ function checkLevel (lv) {
   if (cnt === 1) return { ok: true, text: 'уникально (нужен перебор)' };
   return { ok: false, text: 'НЕОДНОЗНАЧНО: ≥2 решений' };
 }
+
+/* ================= документы и согласие при первом запуске ================= */
+const DOCS = {
+  agreement: 'https://linguaflip5959.github.io/nonograms/agreement.html',
+  privacy:   'https://linguaflip5959.github.io/nonograms/privacy.html'
+};
+function consentOverlay (scene) {
+  return new Promise(resolve => {
+    const dim = scene.add.rectangle(0, 0, W, H, 0x272119, 0.55).setOrigin(0)
+      .setDepth(4900).setInteractive({ useHandCursor: false });
+    const cont = scene.add.container(W / 2, H / 2 - 10).setDepth(5000)
+      .setScale(0.92).setAlpha(0);
+    const bg = scene.add.graphics();
+    bg.fillStyle(PAL.panel, 1); bg.fillRoundedRect(-190, -215, 380, 430, 14);
+    bg.lineStyle(1.6, PAL.faint, 1); bg.strokeRoundedRect(-190, -215, 380, 430, 14);
+    cont.add(bg);
+    cont.add(scene.add.text(0, -178, 'Условия использования', {
+      fontFamily: FONT, fontSize: '21px', fontStyle: '800', color: HEX(PAL.ink)
+    }).setOrigin(0.5));
+    cont.add(scene.add.text(0, -122,
+      'Игра сохраняет ваш прогресс прохождения и обезличенную статистику ' +
+      'в хранилище ВКонтакте. Реклама показывается только по вашему запросу.\n\n' +
+      'Продолжая, вы принимаете условия пользовательского соглашения ' +
+      'и политики конфиденциальности.', {
+      fontFamily: FONT, fontSize: '13.5px', fontStyle: '400', color: HEX(PAL.soft),
+      align: 'center', wordWrap: { width: 330 }
+    }).setOrigin(0.5));
+    const openDoc = url => {
+      let w = null;
+      try { w = window.open(url, '_blank'); } catch (e) {}
+      if (!w) toast(scene, 'Не удалось открыть — ссылка есть в описании приложения');
+    };
+    [['Пользовательское соглашение', DOCS.agreement, -48],
+     ['Политика конфиденциальности', DOCS.privacy, -16]].forEach(([t, url, y]) => {
+      const link = scene.add.text(0, y, t, {
+        fontFamily: FONT, fontSize: '13.5px', fontStyle: '500',
+        color: HEX(PAL.accent), textDecoration: 'underline'
+      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      link.on('pointerup', () => openDoc(url));
+      cont.add(link);
+    });
+    const done = v => { dim.destroy(); cont.destroy(); resolve(v); };
+    cont.add(makeButton(scene, {
+      x: 0, y: 96, w: 300, h: 58, label: 'Принять и играть', kind: 'primary',
+      fontSize: 16, depth: 5010, onClick: () => done(true)
+    }).cont);
+    cont.add(makeButton(scene, {
+      x: 0, y: 158, w: 300, h: 48, label: 'Отказаться', kind: 'ghost',
+      fontSize: 15, depth: 5010, onClick: () => done(false)
+    }).cont);
+    scene.tweens.add({ targets: cont, scale: 1, alpha: 1, duration: 180, ease: 'Cubic.easeOut' });
+  });
+}
+
 function runSelfCheck (scene) {
   const results = LEVELS.map(lv => {
     const r = checkLevel(lv);
@@ -576,6 +630,15 @@ class BootScene extends Phaser.Scene {
       } catch (e) {}
       await VK.init();
       await Save.load();
+	  if (!Save.data.accepted) {
+        let ok = false;
+        while (!ok) {
+          ok = await consentOverlay(this);
+          if (!ok) toast(this, 'Без принятия условий игра недоступна');
+        }
+        Save.data.accepted = true;
+        Save.persist();
+      }
       VK.event('game_start');
       const sp = document.getElementById('splash');
       if (sp) { sp.classList.add('hide'); setTimeout(() => sp.remove(), 600); }
