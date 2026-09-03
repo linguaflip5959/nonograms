@@ -7,7 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='5' fill='%23F3ECDC'/><rect x='7' y='7' width='10' height='10' rx='2' fill='%23272119'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html, body {
@@ -152,7 +152,7 @@ const VK = {
       return (r && r.result === false) ? 'closed' : 'reward';
     } catch (e) { return 'error'; }
   },
-    event (name, data) {
+      event (name, data) {
     if (!this.ready) console.log('%c[event] ' + name, 'color:#B9452C', data || {});
     if (this.ready && this.bridge) {
       try {
@@ -528,6 +528,40 @@ function checkLevel (lv) {
   return { ok: false, text: 'НЕОДНОЗНАЧНО: ≥2 решений' };
 }
 
+
+
+function runSelfCheck (scene) {
+  const results = LEVELS.map(lv => {
+    const r = checkLevel(lv);
+    return { '#': lv.id, name: lv.name, size: lv.size + '×' + lv.size, verdict: r.text, ok: r.ok };
+  });
+  console.table(results);
+  const bad = results.filter(r => !r.ok).length;
+  scene.add.text(W / 2, 60, 'ПРОВЕРКА УРОВНЕЙ', {
+    fontFamily: FONT, fontSize: '20px', fontStyle: '800', color: HEX(PAL.ink)
+  }).setOrigin(0.5).setDepth(5000);
+  scene.add.text(W / 2, 88, bad === 0 ? 'все уровни в порядке · детали в консоли'
+    : 'проблем: ' + bad + ' · детали в консоли', {
+    fontFamily: FONT, fontSize: '13px', fontStyle: '500',
+    color: HEX(bad === 0 ? PAL.soft : PAL.accent)
+  }).setOrigin(0.5).setDepth(5000);
+  const rowH = Math.min(34, Math.floor((H - 240) / LEVELS.length));
+  results.forEach((r, i) => {
+    const y = 118 + i * rowH + rowH / 2;
+    scene.add.text(36, y, String(r['#']).padStart(2, '0') + '  ' + r.name, {
+      fontFamily: FONT, fontSize: '14px', fontStyle: '600', color: HEX(PAL.ink)
+    }).setOrigin(0, 0.5).setDepth(5000);
+    scene.add.text(W - 36, y, r.size + ' · ' + r.verdict, {
+      fontFamily: FONT, fontSize: '12.5px', fontStyle: '500',
+      color: HEX(r.ok ? PAL.soft : PAL.accent)
+    }).setOrigin(1, 0.5).setDepth(5000);
+  });
+  makeButton(scene, {
+    x: W / 2, y: H - 62, w: 240, h: 54, label: 'Продолжить', kind: 'primary',
+    fontSize: 16, depth: 5000, onClick: () => scene.scene.start('Menu')
+  });
+}
+
 /* ================= документы и согласие при первом запуске ================= */
 const DOCS = {
   agreement: 'https://linguaflip5959.github.io/nonograms/agreement.html',
@@ -581,38 +615,6 @@ function consentOverlay (scene) {
   });
 }
 
-function runSelfCheck (scene) {
-  const results = LEVELS.map(lv => {
-    const r = checkLevel(lv);
-    return { '#': lv.id, name: lv.name, size: lv.size + '×' + lv.size, verdict: r.text, ok: r.ok };
-  });
-  console.table(results);
-  const bad = results.filter(r => !r.ok).length;
-  scene.add.text(W / 2, 60, 'ПРОВЕРКА УРОВНЕЙ', {
-    fontFamily: FONT, fontSize: '20px', fontStyle: '800', color: HEX(PAL.ink)
-  }).setOrigin(0.5).setDepth(5000);
-  scene.add.text(W / 2, 88, bad === 0 ? 'все уровни в порядке · детали в консоли'
-    : 'проблем: ' + bad + ' · детали в консоли', {
-    fontFamily: FONT, fontSize: '13px', fontStyle: '500',
-    color: HEX(bad === 0 ? PAL.soft : PAL.accent)
-  }).setOrigin(0.5).setDepth(5000);
-  const rowH = Math.min(34, Math.floor((H - 240) / LEVELS.length));
-  results.forEach((r, i) => {
-    const y = 118 + i * rowH + rowH / 2;
-    scene.add.text(36, y, String(r['#']).padStart(2, '0') + '  ' + r.name, {
-      fontFamily: FONT, fontSize: '14px', fontStyle: '600', color: HEX(PAL.ink)
-    }).setOrigin(0, 0.5).setDepth(5000);
-    scene.add.text(W - 36, y, r.size + ' · ' + r.verdict, {
-      fontFamily: FONT, fontSize: '12.5px', fontStyle: '500',
-      color: HEX(r.ok ? PAL.soft : PAL.accent)
-    }).setOrigin(1, 0.5).setDepth(5000);
-  });
-  makeButton(scene, {
-    x: W / 2, y: H - 62, w: 240, h: 54, label: 'Продолжить', kind: 'primary',
-    fontSize: 16, depth: 5000, onClick: () => scene.scene.start('Menu')
-  });
-}
-
 /* ================= BootScene: шрифты → VK → сохранение → меню ================= */
 class BootScene extends Phaser.Scene {
   constructor () { super('Boot'); }
@@ -630,7 +632,11 @@ class BootScene extends Phaser.Scene {
       } catch (e) {}
       await VK.init();
       await Save.load();
-	  if (!Save.data.accepted) {
+      // сплэш прячем ДО оверлея согласия: он — DOM-слой над канвасом
+      // и иначе перекроет кнопки оверлея
+      const sp = document.getElementById('splash');
+      if (sp) { sp.classList.add('hide'); setTimeout(() => sp.remove(), 600); }
+      if (!Save.data.accepted) {
         let ok = false;
         while (!ok) {
           ok = await consentOverlay(this);
@@ -640,8 +646,6 @@ class BootScene extends Phaser.Scene {
         Save.persist();
       }
       VK.event('game_start');
-      const sp = document.getElementById('splash');
-      if (sp) { sp.classList.add('hide'); setTimeout(() => sp.remove(), 600); }
       if (new URLSearchParams(location.search).has('selfcheck')) runSelfCheck(this);
       else this.scene.start('Menu');
     })();
