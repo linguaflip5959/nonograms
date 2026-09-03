@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>Нонограммы · японские кроссворды</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='5' fill='%23F3ECDC'/><rect x='7' y='7' width='10' height='10' rx='2' fill='%23272119'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
@@ -16,7 +17,6 @@
   }
   #app { width:100%; height:100%; }
   #app canvas { touch-action:none; display:block; }
-  /* Сплэш, пока грузятся шрифты и VK Bridge */
   #splash {
     position:fixed; inset:0; z-index:10; background:#F3ECDC;
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px;
@@ -384,12 +384,11 @@ function demoAd (scene) {
     cont.add(scene.add.text(0, -190, 'РЕКЛАМА · ДЕМО-РЕЖИМ', {
       fontFamily: MONO, fontSize: '11px', fontStyle: '700', color: HEX(PAL.soft)
     }).setOrigin(0.5));
-    // муляж рекламного креатива
     const ad = scene.add.graphics();
     ad.fillStyle(PAL.panelDeep, 1); ad.fillRoundedRect(-146, -162, 292, 150, 10);
     ad.fillStyle(PAL.faint, 0.55); ad.fillRoundedRect(-132, -148, 116, 116, 8);
     ad.fillStyle(PAL.soft, 0.9);
-    ad.fillTriangle(-92, -102, -74, -90, -92, -78); // «плей»
+    ad.fillTriangle(-92, -102, -74, -90, -92, -78);
     ad.fillStyle(PAL.faint, 0.8);
     ad.fillRoundedRect(2, -140, 124, 11, 5);
     ad.fillRoundedRect(2, -114, 96, 11, 5);
@@ -400,7 +399,6 @@ function demoAd (scene) {
       fontFamily: FONT, fontSize: '12.5px', fontStyle: '400', color: HEX(PAL.soft),
       align: 'center', wordWrap: { width: 300 }
     }).setOrigin(0.5));
-    // полоса прогресса 4 секунды
     const bar = scene.add.graphics();
     const drawBar = p => {
       bar.clear();
@@ -414,7 +412,6 @@ function demoAd (scene) {
       tevt && tevt.remove();
       dim.destroy(); cont.destroy(); resolve(v);
     };
-    // кнопки
     cont.add(makeButton(scene, {
       x: -86, y: 130, w: 150, h: 50, label: 'Закрыть', kind: 'ghost', fontSize: 15,
       onClick: () => finish('closed')
@@ -425,7 +422,6 @@ function demoAd (scene) {
     });
     claimBtn.setEnabled(false);
     cont.add(claimBtn.cont);
-    // отсчёт
     let left = 4;
     const tevt = scene.time.addEvent({
       delay: 1000, repeat: 4, callback: () => {
@@ -469,7 +465,6 @@ function maskPatterns (n, clue) {
     if (runsOfMask(m, n).join(',') === want) list.push(m);
   return (maskPatterns.cache[key] = list);
 }
-// known: 2 — неизвестно, 1 — закрашено, 0 — пусто. true — состояние изменилось.
 function refineLine (n, clues, known, isRow, li, rep) {
   if (rep.bad) return false;
   const ok = [];
@@ -583,7 +578,7 @@ class BootScene extends Phaser.Scene {
       await Save.load();
       VK.event('game_start');
       const sp = document.getElementById('splash');
-            if (sp) { sp.classList.add('hide'); setTimeout(() => sp.remove(), 600); }
+      if (sp) { sp.classList.add('hide'); setTimeout(() => sp.remove(), 600); }
       if (new URLSearchParams(location.search).has('selfcheck')) runSelfCheck(this);
       else this.scene.start('Menu');
     })();
@@ -604,7 +599,6 @@ class MenuScene extends Phaser.Scene {
     this.add.text(W / 2, 164, 'японские кроссворды · 12 картинок', {
       fontFamily: FONT, fontSize: '14.5px', fontStyle: '400', color: HEX(PAL.soft)
     }).setOrigin(0.5);
-    // разделитель с ромбом
     const ln = this.add.graphics();
     ln.lineStyle(1.4, PAL.faint, 1);
     ln.beginPath(); ln.moveTo(W / 2 - 90, 202); ln.lineTo(W / 2 - 12, 202);
@@ -613,7 +607,7 @@ class MenuScene extends Phaser.Scene {
     ln.fillTriangle(W / 2, 197, W / 2 + 5, 202, W / 2, 207);
     ln.fillTriangle(W / 2, 207, W / 2 - 5, 202, W / 2, 197);
 
-     this.buildDemo();
+    this.buildDemo();
 
     const allDone = Save.data.completed.length >= LEVELS.length;
     const next = allDone ? 1 : Save.firstIncomplete() + 1;
@@ -645,18 +639,20 @@ class MenuScene extends Phaser.Scene {
       });
     }
   }
-  // живое демо-поле: маленькое «сердечко» закрашивается само, по клетке
-    buildDemo () {
-    const dc = 34, n = 5, ox = W / 2 - n * dc / 2;
+  // живой логотип: «сердечко» собирается по клетке в сплошной силуэт
+  buildDemo () {
+    const n = 5;
+    const dc = clamp(Math.floor((H - 547) / 6), 30, 38);
+    const ox = W / 2 - n * dc / 2;
     const oy = 224 + Math.max(0, Math.floor((H - 724) / 2));
-    if (oy + 216 < H - 313) {
-      this.add.text(W / 2, oy + 204, 'клетка за клеткой', {
+    if (oy + n * dc + 30 < H - 313) {
+      this.add.text(W / 2, oy + n * dc + 24, 'клетка за клеткой', {
         fontFamily: MONO, fontSize: '12px', fontStyle: '500', color: HEX(PAL.soft)
       }).setOrigin(0.5).setAlpha(0.85);
     }
     const g = this.add.graphics();
     const cells = [];
-    const demo = LEVELS[1].solution;
+    const demo = LEVELS[1].solution;                 // «Сердечко»
     for (let r = 0; r < n; r++) for (let c = 0; c < n; c++)
       if (demo[r][c] === '1') cells.push([r, c]);
     const redraw = step => {
@@ -669,22 +665,23 @@ class MenuScene extends Phaser.Scene {
         g.moveTo(ox, oy + i * dc); g.lineTo(ox + n * dc, oy + i * dc);
         g.strokePath();
       }
-      g.lineStyle(2, PAL.ink, 1); g.strokeRect(ox, oy, n * dc, n * dc);
       g.fillStyle(PAL.cell, 1);
       for (let i = 0; i < step; i++) {
         const [r, c] = cells[i];
-        g.fillRoundedRect(ox + c * dc + 3, oy + r * dc + 3, dc - 6, dc - 6, 3);
+        g.fillRect(ox + c * dc + 1, oy + r * dc + 1, dc - 2, dc - 2);
       }
+      g.lineStyle(2, PAL.ink, 1); g.strokeRect(ox, oy, n * dc, n * dc);
     };
     redraw(0);
     let step = 0;
     const cycle = () => {
       step = 0;
       const ev = this.time.addEvent({
-        delay: 165, repeat: cells.length, callback: () => {
-          step++; redraw(Math.min(step, cells.length));
+        delay: 130, repeat: cells.length, callback: () => {
+          step++;
+          redraw(Math.min(step, cells.length));
           if (step >= cells.length) {
-            this.time.delayedCall(1500, () => {
+            this.time.delayedCall(2300, () => {
               this.tweens.add({ targets: g, alpha: 0, duration: 380,
                 onComplete: () => { redraw(0); g.setAlpha(1); this.time.delayedCall(300, cycle); } });
             });
@@ -809,6 +806,7 @@ class GameScene extends Phaser.Scene {
 
     this.buildHUD();
     this.buildField();
+    this.buildStatus();
     this.buildControls();
     VK.event('level_open', { level: this.level.id });
   }
@@ -844,23 +842,32 @@ class GameScene extends Phaser.Scene {
     const n = this.n;
     const maxRB = Math.max(...this.rowClues.map(c => c.length));
     const maxCB = Math.max(...this.colClues.map(c => c.length));
-    const topY = 100, bottomY = H - 166;   // зона поля: от шапки до кнопок режимов
+
+    /* геометрия: размер цифр зависит от клетки, а ширина чисел — от размера
+       цифр, поэтому подбираем всё сходящимися проходами */
+    const topY = 100, bottomY = H - 166;   // зона поля: от шапки до кнопок
     const availH = bottomY - topY;
-    let cell = Math.min(
-      Math.floor((W - 36) / (n + 0.62 * maxRB + 0.2)),
-      Math.floor(availH / (n + 0.5 + 0.62 * maxCB))
-    );
-    cell = clamp(cell, 20, n === 5 ? 62 : 40);
-    cell = clamp(cell, 20, n === 5 ? 58 : 40);
+    const STATUS = 46;                      // статус-строка под полем
+    let cell = n === 5 ? 77 : 42;
+    let numFont, clueW, clueH;
+    for (let pass = 0; pass < 3; pass++) {
+      numFont = clamp(Math.round(cell * 0.5), 12, 22);
+      clueW = maxRB * (Math.round(numFont * 0.62) + 6) + 10;
+      clueH = maxCB * (numFont + 4) + 10;
+      cell = Math.min(cell,
+        Math.floor((W - 24 - clueW) / n),
+        Math.floor((availH - STATUS - 20 - clueH) / n));
+    }
+    cell = clamp(cell, 18, 77);
     this.cell = cell;
-    const numFont = clamp(Math.round(cell * 0.5), 12, 19);
-    const clueW = maxRB * (Math.round(numFont * 0.62) + 6) + 10;
-    const clueH = maxCB * (numFont + 4) + 10;
+    numFont = clamp(Math.round(cell * 0.5), 12, 22);
+    clueW = maxRB * (Math.round(numFont * 0.62) + 6) + 10;
+    clueH = maxCB * (numFont + 4) + 10;
     this.clueW = clueW; this.clueH = clueH;
     const bw = clueW + n * cell, bh = clueH + n * cell;
-    this.bw = bw;
+    this.bw = bw; this.bh = bh;
     const bx = (W - bw) / 2;
-    const by = topY + (availH - bh) / 2;
+    const by = topY + Math.max(8, Math.floor((availH - bh - STATUS) / 2));
     this.bx = bx; this.by = by;
     this.fieldX = bx + clueW; this.fieldY = by + clueH;
 
@@ -929,8 +936,32 @@ class GameScene extends Phaser.Scene {
     zone.on('pointerout', () => { if (!this.won) this.hlG.clear(); });
   }
 
+  /* ---------- статус-строка под полем ---------- */
+  buildStatus () {
+    this.solTotal = 0;
+    for (const row of this.level.solution)
+      for (const ch of row) if (ch === '1') this.solTotal++;
+    this.statusText = this.add.text(this.bx + this.bw / 2, this.by + this.bh + 24, '', {
+      fontFamily: MONO, fontSize: '13px', fontStyle: '500', color: HEX(PAL.soft)
+    }).setOrigin(0.5);
+    this.statusBar = this.add.graphics();
+    this.updateStatus();
+  }
+
+  updateStatus () {
+    if (!this.statusText) return;
+    const filled = this.grid.reduce((a, v) => a + (v === 1 ? 1 : 0), 0);
+    this.statusText.setText('закрашено ' + filled + ' из ' + this.solTotal);
+    const g = this.statusBar;
+    g.clear();
+    const x = this.bx, y = this.by + this.bh + 38, w = this.bw;
+    g.fillStyle(PAL.faint, 1); g.fillRoundedRect(x, y, w, 5, 2.5);
+    g.fillStyle(PAL.ink, 1);
+    g.fillRoundedRect(x, y, Math.max(4, w * filled / this.solTotal), 5, 2.5);
+  }
+
   /* ---------- нижние кнопки ---------- */
-    buildControls () {
+  buildControls () {
     // режимы — нижний ряд
     const modes = [
       { key: 'fill',  label: 'Закрасить', icon: Icons.cellFill },
@@ -956,7 +987,7 @@ class GameScene extends Phaser.Scene {
     });
     this.setMode('fill', true);
 
-    // действия — самый нижний ряд, отступ от края 30px
+    // действия — самый нижний ряд
     this.undoBtn = makeButton(this, {
       x: 24 + 69, y: H - 57, w: 138, h: 54, label: 'Отменить · 3', kind: 'ghost', icon: Icons.undo,
       fontSize: 13, onClick: () => this.doUndo()
@@ -1030,7 +1061,7 @@ class GameScene extends Phaser.Scene {
     g.clear();
     g.fillStyle(PAL.hl, 0.45);
     g.fillRect(this.bx - 4, this.fieldY + r * cell, this.bw + 8, cell);
-    g.fillRect(this.fieldX + c * cell, this.by - 4, cell, this.bw ? (this.clueH + this.n * cell + 8) : 0);
+    g.fillRect(this.fieldX + c * cell, this.by - 4, cell, this.clueH + this.n * cell + 8);
   }
 
   flashCell (i, col) {
@@ -1080,6 +1111,7 @@ class GameScene extends Phaser.Scene {
   }
 
   updateActionLabels () {
+    this.updateStatus();
     this.undoBtn.setText('Отменить · ' + this.undoLeft);
     this.hintBtn.setText('Подсказка · ' + this.hintsLeft);
   }
@@ -1156,7 +1188,6 @@ class GameScene extends Phaser.Scene {
     Save.complete(this.levelIndex);
     const elapsed = this.time.now - this.startTime;
     VK.event('level_complete', { level: this.level.id, seconds: Math.round(elapsed / 1000) });
-    // чернильная вспышка по рамке поля
     const wg = this.add.graphics();
     wg.lineStyle(4, PAL.accent, 1);
     wg.strokeRect(this.fieldX, this.fieldY, this.n * this.cell, this.n * this.cell);
@@ -1184,7 +1215,6 @@ class GameScene extends Phaser.Scene {
       fontFamily: MONO, fontSize: '13px', fontStyle: '500', color: HEX(PAL.soft)
     }).setOrigin(0.5));
 
-    // штамп «ПРОЙДЕНО» — впечатывается с нажимом
     const stamp = this.add.container(0, -10).setAngle(-8).setAlpha(0).setScale(2.3);
     const sg = this.add.graphics();
     sg.lineStyle(3, PAL.accent, 0.95); sg.strokeCircle(0, 0, 48);
@@ -1255,6 +1285,8 @@ new Phaser.Game({
   parent: 'app',
   width: W, height: H,
   backgroundColor: '#F3ECDC',
+  // игра без звука: аудио-менеджер не создаёт AudioContext
+  audio: { noAudio: true, disableWebAudio: true },
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   scene: [BootScene, MenuScene, LevelSelectScene, GameScene]
 });
