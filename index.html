@@ -1,0 +1,1265 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>Нонограммы · японские кроссворды</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body {
+    height:100%; overflow:hidden; background:#F3ECDC;
+    touch-action:none; -webkit-user-select:none; user-select:none;
+    -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none;
+  }
+  #app { width:100%; height:100%; }
+  #app canvas { touch-action:none; display:block; }
+  /* Сплэш, пока грузятся шрифты и VK Bridge */
+  #splash {
+    position:fixed; inset:0; z-index:10; background:#F3ECDC;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px;
+    font-family:"Golos Text", system-ui, sans-serif; color:#272119;
+    transition:opacity .45s;
+  }
+  #splash.hide { opacity:0; pointer-events:none; }
+  #splash .cells { display:grid; grid-template-columns:repeat(3,16px); gap:6px; }
+  #splash .cells i { width:16px; height:16px; border-radius:4px; background:#272119; opacity:.25; animation:cellblink 1.15s infinite; }
+  #splash .cells i:nth-child(2){animation-delay:.12s} #splash .cells i:nth-child(3){animation-delay:.24s}
+  #splash .cells i:nth-child(4){animation-delay:.36s} #splash .cells i:nth-child(5){animation-delay:.48s}
+  #splash .cells i:nth-child(6){animation-delay:.6s}  #splash .cells i:nth-child(7){animation-delay:.72s}
+  #splash .cells i:nth-child(8){animation-delay:.84s} #splash .cells i:nth-child(9){animation-delay:.96s}
+  @keyframes cellblink { 0%,100%{opacity:.2} 45%{opacity:1} }
+  #splash .t { font-weight:800; font-size:22px; letter-spacing:2px; }
+  #splash .s { font-size:12px; color:#8A7F68; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="splash">
+  <div class="cells"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div class="t">НОНОГРАММЫ</div>
+  <div class="s">японские кроссворды · загружаемся…</div>
+</div>
+
+<script src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<script>
+(function () {
+'use strict';
+
+/* ================= при отсутствии движка — вежливая ошибка ================= */
+if (typeof Phaser === 'undefined') {
+  const s = document.getElementById('splash');
+  s.querySelector('.s').textContent = 'Не удалось загрузить Phaser (проверьте сеть) и запустите страницу по HTTPS.';
+  return;
+}
+
+/* ================= константы и палитра «бумага + чернила» ================= */
+const W = 480;
+// высота дизайна — из пропорции экрана (с клампами), чтобы FIT растягивал
+// канвас от края до края, без полос сверху/снизу
+const H = Math.round(Math.min(1120, Math.max(720, W * window.innerHeight / window.innerWidth)));
+const FONT = '"Golos Text", system-ui, sans-serif';
+const MONO = '"JetBrains Mono", monospace';
+const PAL = {
+  paper: 0xF3ECDC, panel: 0xFBF6E9, panelDeep: 0xEEE5CE,
+  ink: 0x272119, soft: 0x8A7F68, faint: 0xD8CDB2,
+  accent: 0xB9452C, cell: 0x2B251C, cross: 0xB9452C,
+  hl: 0xF0DCA2, lock: 0xB3A88C,
+};
+const HEX = c => '#' + c.toString(16).padStart(6, '0');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+/* ================= 12 уровней (4×5×5, 6×10×10, 2×10×10 сложные) ================= */
+const LEVELS = [
+  { id: 1,  size: 5,  name: 'Крест',    solution: ['00100','01110','11111','01110','00100'] },
+  { id: 2,  size: 5,  name: 'Сердечко', solution: ['01010','11111','11111','01110','00100'] },
+  { id: 3,  size: 5,  name: 'Смайлик',  solution: ['00000','10101','00000','10001','01110'] },
+  { id: 4,  size: 5,  name: 'Домик',    solution: ['00100','01110','11111','11011','11011'] },
+  { id: 5,  size: 10, name: 'Парусник', solution: [
+      '0000001000','0000011000','0000111000','0001111000','0011111000',
+      '0000000000','0111111110','1111111111','0011111100','0000000000' ] },
+  { id: 6,  size: 10, name: 'Кот', solution: [
+      '1100000011','1110000111','1111111111','1101111011','1101111011',
+      '1111111111','1111111111','0111111110','0011111100','0000000000' ] },
+  { id: 7,  size: 10, name: 'Сердце', solution: [
+      '0111001110','1111001111','1111111111','1111111111','0111111110',
+      '0011111100','0011111100','0001111000','0000110000','0000000000' ] },
+  { id: 8,  size: 10, name: 'Дом', solution: [
+      '0000110000','0001111000','0011111100','0111111110','1111111111',
+      '1011001101','1011001101','1011001101','1011001101','1111111111' ] },
+  { id: 9,  size: 10, name: 'Ёлка', solution: [
+      '0000110000','0001111000','0011111100','0111111110','1111111111',
+      '0000110000','0000110000','0000110000','0000110000','0000110000' ] },
+  { id: 10, size: 10, name: 'Рыбка', solution: [
+      '0001111000','0011111100','0111111110','1111111110','1111111010',
+      '1111111110','0111111110','0011111100','0001111000','0000000000' ] },
+  { id: 11, size: 10, name: 'Сова',    hard: true, solution: [
+      '0011111100','0111111110','1100110011','1100110011','1111111111',
+      '0111111110','0111111110','0011111100','0001111000','0000110000' ] },
+  { id: 12, size: 10, name: 'Бабочка', hard: true, solution: [
+      '0010000100','0000110000','0110110110','1111111111','1101111011',
+      '1100110011','0100110010','0000110000','0000110000','0000000000' ] },
+];
+
+/* ================= утилиты ================= */
+function withTimeout (p, ms) {
+  return Promise.race([Promise.resolve(p),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+}
+function fmtTime (ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+// числовые подсказки из строки вида '0110101'
+function cluesOf (lines) {
+  return lines.map(s => {
+    const res = []; let run = 0;
+    for (const ch of s) {
+      if (ch === '1') run++;
+      else { if (run) res.push(run); run = 0; }
+    }
+    if (run) res.push(run);
+    return res.length ? res : [0];
+  });
+}
+function transpose (lv) {
+  const cols = [];
+  for (let c = 0; c < lv.size; c++) {
+    let s = '';
+    for (let r = 0; r < lv.size; r++) s += lv.solution[r][c];
+    cols.push(s);
+  }
+  return cols;
+}
+
+/* ================= VK Bridge: инициализация, storage, реклама, события ================= */
+const VK = {
+  bridge: (typeof vkBridge !== 'undefined' && vkBridge && typeof vkBridge.send === 'function') ? vkBridge : null,
+  ready: false,
+  async init () {
+    if (!this.bridge) return false;
+    try { await withTimeout(this.bridge.send('VKWebAppInit'), 2500); this.ready = true; }
+    catch (e) { this.ready = false; }
+    return this.ready;
+  },
+  async showRewarded () {           // 'reward' | 'closed' | 'error'
+    if (!this.ready) return 'demo'; // вне ВК — вызывающий покажет демо-оверлей
+    try {
+      const r = await withTimeout(this.bridge.send('VKWebAppShowNativeAds', { ad_format: 'reward' }), 150000);
+      return (r && r.result === false) ? 'closed' : 'reward';
+    } catch (e) { return 'error'; }
+  },
+  event (name, data) {
+    console.log('%c[event] ' + name, 'color:#B9452C', data || {});
+    if (this.ready && this.bridge) {
+      try {
+        const p = this.bridge.send('VKWebAppSendEvent', Object.assign({ event: name }, data || {}));
+        if (p && p.catch) p.catch(() => {});
+      } catch (e) { /* тихо: событие не критично */ }
+    }
+  }
+};
+
+/* ================= сохранение прогресса: VK storage → localStorage → память ================= */
+const SAVE_KEY = 'nonograms_save';
+const Save = {
+  data: { version: 1, completed: [], lastUnlockedLevel: 1 },
+  backend: 'memory',
+  parse (s) {
+    try {
+      const d = JSON.parse(s);
+      if (d && d.version === 1 && Array.isArray(d.completed)) this.data = d;
+    } catch (e) {}
+  },
+  async load () {
+    if (VK.ready) {
+      try {
+        const r = await withTimeout(VK.bridge.send('VKWebAppStorageGet', { keys: [SAVE_KEY] }), 3000);
+        const rec = r && r.keys && r.keys.find(k => k.key === SAVE_KEY);
+        if (rec && rec.value) { this.parse(rec.value); this.backend = 'vk'; return; }
+        this.backend = 'vk'; // хранилище доступно, ключа ещё нет
+      } catch (e) { /* пробуем localStorage */ }
+    }
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (raw) this.parse(raw);
+      this.backend = 'local';
+    } catch (e) { this.backend = 'memory'; }
+  },
+  async persist () {
+    const s = JSON.stringify(this.data);
+    if (this.backend === 'vk') {
+      try { await withTimeout(VK.bridge.send('VKWebAppStorageSet', { key: SAVE_KEY, value: s }), 3000); return; }
+      catch (e) { /* на запись в VK не повезло — пишем локально */ }
+    }
+    try { localStorage.setItem(SAVE_KEY, s); } catch (e) {}
+  },
+  isCompleted (id) { return this.data.completed.includes(id); },
+  isUnlocked (idx) { return idx === 0 || this.isCompleted(LEVELS[idx - 1].id); },
+  complete (idx) {
+    const id = LEVELS[idx].id;
+    if (!this.isCompleted(id)) this.data.completed.push(id);
+    this.data.lastUnlockedLevel = Math.min(LEVELS.length,
+      Math.max.apply(null, this.data.completed) + 1);
+    this.persist();
+  },
+  firstIncomplete () {
+    for (let i = 0; i < LEVELS.length; i++) if (!this.isCompleted(LEVELS[i].id)) return i;
+    return 0;
+  },
+  reset () { this.data = { version: 1, completed: [], lastUnlockedLevel: 1 }; this.persist(); }
+};
+
+/* ================= иконки (рисуются Graphics'ом, без картинок) ================= */
+const Icons = {
+  cellFill (g, x, y, col) { g.fillStyle(col, 1); g.fillRoundedRect(x - 6.5, y - 6.5, 13, 13, 3); },
+  cross (g, x, y, col) {
+    g.lineStyle(2.4, col, 1); g.beginPath();
+    g.moveTo(x - 5.5, y - 5.5); g.lineTo(x + 5.5, y + 5.5);
+    g.moveTo(x + 5.5, y - 5.5); g.lineTo(x - 5.5, y + 5.5);
+    g.strokePath();
+  },
+  eraser (g, x, y, col) {
+    g.fillStyle(col, 1); g.fillRoundedRect(x - 8, y - 5.5, 16, 11, 3);
+    g.lineStyle(1.6, 0xFBF6E9, 1); g.beginPath();
+    g.moveTo(x - 3, y - 5.5); g.lineTo(x - 3, y + 5.5); g.strokePath();
+  },
+  undo (g, x, y, col) {
+    g.lineStyle(2.3, col, 1); g.beginPath();
+    g.moveTo(x + 7, y); g.lineTo(x - 5, y); g.strokePath();
+    g.fillStyle(col, 1); g.fillTriangle(x - 5, y - 4.5, x - 5, y + 4.5, x - 11, y);
+  },
+  bulb (g, x, y, col) {
+    g.lineStyle(2.2, col, 1); g.strokeCircle(x, y - 1.5, 5.5);
+    g.fillStyle(col, 1); g.fillRoundedRect(x - 3, y + 4.5, 6, 2.5, 1);
+  },
+  check (g, x, y, col) {
+    g.lineStyle(2.6, col, 1); g.beginPath();
+    g.moveTo(x - 6, y + 0.5); g.lineTo(x - 1.5, y + 5); g.lineTo(x + 7, y - 5);
+    g.strokePath();
+  },
+  lock (g, x, y, col) {
+    g.lineStyle(2, col, 1); g.beginPath();
+    g.arc(x, y - 1, 5, Phaser.Math.DegToRad(180), Phaser.Math.DegToRad(360));
+    g.strokePath();
+    g.fillStyle(col, 1); g.fillRoundedRect(x - 7, y - 1, 14, 11, 2.5);
+  },
+  back (g, x, y, col) {
+    g.lineStyle(2.3, col, 1); g.beginPath();
+    g.moveTo(x + 6, y); g.lineTo(x - 6, y); g.strokePath();
+    g.fillStyle(col, 1); g.fillTriangle(x - 6, y - 4.5, x - 6, y + 4.5, x - 12, y);
+  }
+};
+
+/* ================= UI-кит: бумага, кнопки, тосты, диалоги ================= */
+function makePaper (scene) {
+  if (scene.textures.exists('paper')) return;
+  const cv = document.createElement('canvas'); cv.width = cv.height = 120;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = HEX(PAL.paper); ctx.fillRect(0, 0, 120, 120);
+  for (let i = 0; i < 170; i++) {
+    ctx.fillStyle = 'rgba(39,33,25,' + (0.02 + Math.random() * 0.05).toFixed(3) + ')';
+    const s = Math.random() < 0.85 ? 1 : 2;
+    ctx.fillRect(Math.random() * 120, Math.random() * 120, s, s);
+  }
+  scene.textures.addCanvas('paper', cv);
+}
+function paperBG (scene) {
+  makePaper(scene);
+  return scene.add.tileSprite(0, 0, W, H, 'paper').setOrigin(0).setDepth(-10);
+}
+
+function drawBtnBg (g, w, h, kind, enabled) {
+  g.clear();
+  const a = enabled ? 1 : 0.45;
+  if (kind === 'primary') { g.fillStyle(PAL.ink, a); g.fillRoundedRect(-w / 2, -h / 2, w, h, 11); }
+  else if (kind === 'accent') { g.fillStyle(PAL.accent, a); g.fillRoundedRect(-w / 2, -h / 2, w, h, 11); }
+  else {
+    g.fillStyle(PAL.panel, a); g.fillRoundedRect(-w / 2, -h / 2, w, h, 11);
+    g.lineStyle(1.6, PAL.faint, a); g.strokeRoundedRect(-w / 2, -h / 2, w, h, 11);
+  }
+}
+
+// Универсальная кнопка: иконка + подпись, нажатие лёгким сжатием
+function makeButton (scene, o) {
+  const cont = scene.add.container(o.x, o.y).setDepth(o.depth || 20);
+  const bg = scene.add.graphics();
+  drawBtnBg(bg, o.w, o.h, o.kind || 'ghost', true);
+  cont.add(bg);
+  const light = (o.kind === 'primary' || o.kind === 'accent');
+  let iconX = 0, labelX = 0;
+  if (o.icon) {
+    const gi = scene.add.graphics();
+    o.icon(gi, -o.w / 2 + 30, 0, light ? 0xF7F1E0 : PAL.ink);
+    cont.add(gi);
+    iconX = -o.w / 2 + 30; labelX = iconX + 15;
+  }
+  const label = scene.add.text(o.icon ? labelX : 0, 0, o.label, {
+    fontFamily: FONT, fontSize: (o.fontSize || 16) + 'px', fontStyle: '600',
+    color: light ? '#F7F1E0' : HEX(PAL.ink)
+  }).setOrigin(o.icon ? 0 : 0.5, 0.5);
+  cont.add(label);
+  const hit = scene.add.rectangle(0, 0, o.w, o.h, PAL.ink, 0.001)
+    .setInteractive({ useHandCursor: true });
+  cont.add(hit);
+  let enabled = true;
+  hit.on('pointerdown', () => cont.setScale(0.97));
+  hit.on('pointerout', () => cont.setScale(1));
+  hit.on('pointerup', () => {
+    cont.setScale(1);
+    if (enabled && o.onClick) o.onClick();
+  });
+  return {
+    cont,
+    label,
+    setEnabled (v) { enabled = v; cont.setAlpha(v ? 1 : 0.5); },
+    setText (s) { label.setText(s); }
+  };
+}
+
+function toast (scene, msg) {
+  if (scene.__toast) { scene.__toast.stop(); scene.__toast.destroy(); }
+  const cont = scene.add.container(W / 2, H - 150).setDepth(3500).setAlpha(0);
+  const label = scene.add.text(0, 0, msg, {
+    fontFamily: FONT, fontSize: '15px', fontStyle: '500', color: '#F6F0DE'
+  }).setOrigin(0.5);
+  const w = clamp(label.width + 52, 210, 440);
+  const bg = scene.add.graphics();
+  bg.fillStyle(PAL.ink, 0.94); bg.fillRoundedRect(-w / 2, -24, w, 48, 10);
+  cont.add(bg); cont.add(label);
+  scene.__toast = cont;
+  scene.tweens.add({ targets: cont, y: H - 186, alpha: 1, duration: 180, ease: 'Cubic.easeOut' });
+  cont.stop = () => { try { scene.tweens.killTweensOf(cont); } catch (e) {} };
+  scene.time.delayedCall(2100, () => {
+    if (!cont.active) return;
+    scene.tweens.add({ targets: cont, alpha: 0, y: H - 160, duration: 260,
+      onComplete: () => cont.destroy() });
+  });
+}
+
+// Диалог подтверждения, возвращает Promise<boolean>
+function confirmDialog (scene, o) {
+  return new Promise(resolve => {
+    const dim = scene.add.rectangle(0, 0, W, H, 0x272119, 0.45).setOrigin(0).setDepth(3900)
+      .setInteractive({ useHandCursor: false });
+    const cont = scene.add.container(W / 2, H / 2 - 20).setDepth(4000).setScale(0.92).setAlpha(0);
+    const bg = scene.add.graphics();
+    bg.fillStyle(PAL.panel, 1); bg.fillRoundedRect(-172, -105, 344, 210, 14);
+    bg.lineStyle(1.6, PAL.faint, 1); bg.strokeRoundedRect(-172, -105, 344, 210, 14);
+    cont.add(bg);
+    cont.add(scene.add.text(0, -70, o.title, {
+      fontFamily: FONT, fontSize: '19px', fontStyle: '800', color: HEX(PAL.ink)
+    }).setOrigin(0.5));
+    cont.add(scene.add.text(0, -28, o.text, {
+      fontFamily: FONT, fontSize: '14.5px', fontStyle: '400', color: HEX(PAL.soft),
+      wordWrap: { width: 290 }, align: 'center'
+    }).setOrigin(0.5));
+    const done = v => {
+      dim.destroy(); cont.destroy(); resolve(v);
+    };
+    cont.add(makeButton(scene, {
+      x: -84, y: 62, w: 148, h: 50, label: o.no || 'Отмена', kind: 'ghost', fontSize: 15,
+      onClick: () => done(false)
+    }).cont);
+    cont.add(makeButton(scene, {
+      x: 84, y: 62, w: 148, h: 50, label: o.yes || 'Да', kind: o.accentYes ? 'accent' : 'primary',
+      fontSize: 15, onClick: () => done(true)
+    }).cont);
+    scene.tweens.add({ targets: cont, scale: 1, alpha: 1, duration: 160, ease: 'Cubic.easeOut' });
+  });
+}
+
+/* ================= демо-реклама (когда запускаемся вне ВК) ================= */
+function demoAd (scene) {
+  return new Promise(resolve => {
+    const dim = scene.add.rectangle(0, 0, W, H, 0x272119, 0.55).setOrigin(0).setDepth(4600);
+    const cont = scene.add.container(W / 2, H / 2 - 24).setDepth(4700).setScale(0.94).setAlpha(0);
+    const bg = scene.add.graphics();
+    bg.fillStyle(PAL.panel, 1); bg.fillRoundedRect(-172, -215, 344, 430, 14);
+    bg.lineStyle(1.6, PAL.faint, 1); bg.strokeRoundedRect(-172, -215, 344, 430, 14);
+    cont.add(bg);
+    cont.add(scene.add.text(0, -190, 'РЕКЛАМА · ДЕМО-РЕЖИМ', {
+      fontFamily: MONO, fontSize: '11px', fontStyle: '700', color: HEX(PAL.soft)
+    }).setOrigin(0.5));
+    // муляж рекламного креатива
+    const ad = scene.add.graphics();
+    ad.fillStyle(PAL.panelDeep, 1); ad.fillRoundedRect(-146, -162, 292, 150, 10);
+    ad.fillStyle(PAL.faint, 0.55); ad.fillRoundedRect(-132, -148, 116, 116, 8);
+    ad.fillStyle(PAL.soft, 0.9);
+    ad.fillTriangle(-92, -102, -74, -90, -92, -78); // «плей»
+    ad.fillStyle(PAL.faint, 0.8);
+    ad.fillRoundedRect(2, -140, 124, 11, 5);
+    ad.fillRoundedRect(2, -114, 96, 11, 5);
+    ad.fillRoundedRect(2, -88, 110, 11, 5);
+    ad.fillStyle(PAL.accent, 0.85); ad.fillRoundedRect(2, -56, 74, 20, 6);
+    cont.add(ad);
+    cont.add(scene.add.text(0, 8, 'В среде ВК здесь появится настоящее видео.\nТест: досмотрите до конца — получите награду.', {
+      fontFamily: FONT, fontSize: '12.5px', fontStyle: '400', color: HEX(PAL.soft),
+      align: 'center', wordWrap: { width: 300 }
+    }).setOrigin(0.5));
+    // полоса прогресса 4 секунды
+    const bar = scene.add.graphics();
+    const drawBar = p => {
+      bar.clear();
+      bar.fillStyle(PAL.faint, 1); bar.fillRoundedRect(-130, 44, 260, 5, 2.5);
+      bar.fillStyle(PAL.accent, 1); bar.fillRoundedRect(-130, 44, 260 * p, 5, 2.5);
+    };
+    drawBar(0); cont.add(bar);
+    let claimed = false, timerDone = false;
+    const finish = v => {
+      if (claimed) return; claimed = true;
+      tevt && tevt.remove();
+      dim.destroy(); cont.destroy(); resolve(v);
+    };
+    // кнопки
+    cont.add(makeButton(scene, {
+      x: -86, y: 130, w: 150, h: 50, label: 'Закрыть', kind: 'ghost', fontSize: 15,
+      onClick: () => finish('closed')
+    }).cont);
+    const claimBtn = makeButton(scene, {
+      x: 84, y: 130, w: 158, h: 50, label: 'Награда: 4 с', kind: 'accent', fontSize: 15,
+      onClick: () => { if (timerDone) finish('reward'); }
+    });
+    claimBtn.setEnabled(false);
+    cont.add(claimBtn.cont);
+    // отсчёт
+    let left = 4;
+    const tevt = scene.time.addEvent({
+      delay: 1000, repeat: 4, callback: () => {
+        left--;
+        if (left > 0) claimBtn.setText('Награда: ' + left + ' с');
+        else if (left === 0) {
+          timerDone = true; claimBtn.setText('Получить награду'); claimBtn.setEnabled(true);
+          scene.tweens.add({ targets: claimBtn.cont, scale: 1.05, duration: 110, yoyo: true });
+        }
+      }
+    });
+    scene.tweens.add({ targets: bar, dummy: 0, duration: 4000,
+      onUpdate: t => drawBar(t.progress) });
+    scene.tweens.add({ targets: cont, scale: 1, alpha: 1, duration: 160, ease: 'Cubic.easeOut' });
+  });
+}
+
+/* мягкий переход между сценами */
+function go (scene, key, data) {
+  scene.cameras.main.fadeOut(180, 243, 236, 220);
+  scene.time.delayedCall(200, () => scene.scene.start(key, data));
+}
+
+/* ================= самопроверка уровней: index.html?selfcheck ================= */
+function runsOfMask (mask, n) {
+  const runs = []; let run = 0;
+  for (let i = 0; i < n; i++) {
+    if (mask & (1 << i)) run++;
+    else if (run) { runs.push(run); run = 0; }
+  }
+  if (run) runs.push(run);
+  return runs;
+}
+function maskPatterns (n, clue) {
+  const key = n + ':' + clue.join(',');
+  maskPatterns.cache = maskPatterns.cache || {};
+  if (maskPatterns.cache[key]) return maskPatterns.cache[key];
+  const want = (clue.length === 1 && clue[0] === 0) ? '' : clue.join(',');
+  const list = [];
+  for (let m = 0; m < (1 << n); m++)
+    if (runsOfMask(m, n).join(',') === want) list.push(m);
+  return (maskPatterns.cache[key] = list);
+}
+// known: 2 — неизвестно, 1 — закрашено, 0 — пусто. true — состояние изменилось.
+function refineLine (n, clues, known, isRow, li, rep) {
+  if (rep.bad) return false;
+  const ok = [];
+  for (const m of maskPatterns(n, clues[li])) {
+    let good = true;
+    for (let j = 0; j < n; j++) {
+      const k = known[isRow ? li * n + j : j * n + li];
+      if (k !== 2 && ((m >> j) & 1) !== k) { good = false; break; }
+    }
+    if (good) ok.push(m);
+  }
+  if (!ok.length) { rep.bad = true; return false; }
+  let AND = ok[0], OR = ok[0];
+  for (let i = 1; i < ok.length; i++) { AND &= ok[i]; OR |= ok[i]; }
+  let changed = false;
+  for (let j = 0; j < n; j++) {
+    const v = ((AND >> j) & 1) ? 1 : (((OR >> j) & 1) ? 2 : 0);
+    const idx = isRow ? li * n + j : j * n + li;
+    if (v !== 2 && known[idx] === 2) { known[idx] = v; changed = true; }
+  }
+  return changed;
+}
+function propagate (n, rowClues, colClues, known) {
+  const rep = { bad: false };
+  let changed = true;
+  while (changed && !rep.bad) {
+    changed = false;
+    for (let r = 0; r < n; r++) if (refineLine(n, rowClues, known, true, r, rep)) changed = true;
+    for (let c = 0; c < n; c++) if (refineLine(n, colClues, known, false, c, rep)) changed = true;
+  }
+  return rep;
+}
+function countSolutions (n, rowClues, colClues, known, cap) {
+  if (propagate(n, rowClues, colClues, known).bad) return 0;
+  const i = known.indexOf(2);
+  if (i === -1) return 1;
+  let total = 0;
+  for (const v of [0, 1]) {
+    if (total >= cap) break;
+    const clone = known.slice();
+    clone[i] = v;
+    total += countSolutions(n, rowClues, colClues, clone, cap - total);
+  }
+  return total;
+}
+function checkLevel (lv) {
+  const n = lv.size;
+  const rowClues = cluesOf(lv.solution);
+  const colClues = cluesOf(transpose(lv));
+  const known = new Array(n * n).fill(2);
+  if (propagate(n, rowClues, colClues, known).bad)
+    return { ok: false, text: 'ПРОТИВОРЕЧИЕ: решений нет' };
+  if (!known.includes(2)) {
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++)
+      if (known[r * n + c] !== (lv.solution[r][c] === '1' ? 1 : 0))
+        return { ok: false, text: 'РАСХОЖДЕНИЕ: подсказки ≠ картинке' };
+    return { ok: true, text: 'уникально, чистая логика строк' };
+  }
+  const cnt = countSolutions(n, rowClues, colClues, known.slice(), 2);
+  if (cnt === 1) return { ok: true, text: 'уникально (нужен перебор)' };
+  return { ok: false, text: 'НЕОДНОЗНАЧНО: ≥2 решений' };
+}
+function runSelfCheck (scene) {
+  const results = LEVELS.map(lv => {
+    const r = checkLevel(lv);
+    return { '#': lv.id, name: lv.name, size: lv.size + '×' + lv.size, verdict: r.text, ok: r.ok };
+  });
+  console.table(results);
+  const bad = results.filter(r => !r.ok).length;
+  scene.add.text(W / 2, 60, 'ПРОВЕРКА УРОВНЕЙ', {
+    fontFamily: FONT, fontSize: '20px', fontStyle: '800', color: HEX(PAL.ink)
+  }).setOrigin(0.5).setDepth(5000);
+  scene.add.text(W / 2, 88, bad === 0 ? 'все уровни в порядке · детали в консоли'
+    : 'проблем: ' + bad + ' · детали в консоли', {
+    fontFamily: FONT, fontSize: '13px', fontStyle: '500',
+    color: HEX(bad === 0 ? PAL.soft : PAL.accent)
+  }).setOrigin(0.5).setDepth(5000);
+  const rowH = Math.min(34, Math.floor((H - 240) / LEVELS.length));
+  results.forEach((r, i) => {
+    const y = 118 + i * rowH + rowH / 2;
+    scene.add.text(36, y, String(r['#']).padStart(2, '0') + '  ' + r.name, {
+      fontFamily: FONT, fontSize: '14px', fontStyle: '600', color: HEX(PAL.ink)
+    }).setOrigin(0, 0.5).setDepth(5000);
+    scene.add.text(W - 36, y, r.size + ' · ' + r.verdict, {
+      fontFamily: FONT, fontSize: '12.5px', fontStyle: '500',
+      color: HEX(r.ok ? PAL.soft : PAL.accent)
+    }).setOrigin(1, 0.5).setDepth(5000);
+  });
+  makeButton(scene, {
+    x: W / 2, y: H - 62, w: 240, h: 54, label: 'Продолжить', kind: 'primary',
+    fontSize: 16, depth: 5000, onClick: () => scene.scene.start('Menu')
+  });
+}
+
+/* ================= BootScene: шрифты → VK → сохранение → меню ================= */
+class BootScene extends Phaser.Scene {
+  constructor () { super('Boot'); }
+  create () {
+    paperBG(this);
+    (async () => {
+      try {
+        await Promise.race([
+          Promise.all([
+            document.fonts.load('800 40px "Golos Text"'),
+            document.fonts.load('600 16px "JetBrains Mono"')
+          ]),
+          new Promise(r => setTimeout(r, 3000))
+        ]);
+      } catch (e) {}
+      await VK.init();
+      await Save.load();
+      VK.event('game_start');
+      const sp = document.getElementById('splash');
+            if (sp) { sp.classList.add('hide'); setTimeout(() => sp.remove(), 600); }
+      if (new URLSearchParams(location.search).has('selfcheck')) runSelfCheck(this);
+      else this.scene.start('Menu');
+    })();
+  }
+}
+
+/* ================= MenuScene ================= */
+class MenuScene extends Phaser.Scene {
+  constructor () { super('Menu'); }
+  create () {
+    paperBG(this);
+    this.cameras.main.fadeIn(220, 243, 236, 220);
+
+    const title = this.add.text(W / 2, 116, 'НОНОГРАММЫ', {
+      fontFamily: FONT, fontSize: '44px', fontStyle: '800', color: HEX(PAL.ink)
+    }).setOrigin(0.5);
+    if (title.setLetterSpacing) title.setLetterSpacing(2);
+    this.add.text(W / 2, 164, 'японские кроссворды · 12 картинок', {
+      fontFamily: FONT, fontSize: '14.5px', fontStyle: '400', color: HEX(PAL.soft)
+    }).setOrigin(0.5);
+    // разделитель с ромбом
+    const ln = this.add.graphics();
+    ln.lineStyle(1.4, PAL.faint, 1);
+    ln.beginPath(); ln.moveTo(W / 2 - 90, 202); ln.lineTo(W / 2 - 12, 202);
+    ln.moveTo(W / 2 + 12, 202); ln.lineTo(W / 2 + 90, 202); ln.strokePath();
+    ln.fillStyle(PAL.accent, 1);
+    ln.fillTriangle(W / 2, 197, W / 2 + 5, 202, W / 2, 207);
+    ln.fillTriangle(W / 2, 207, W / 2 - 5, 202, W / 2, 197);
+
+     this.buildDemo();
+
+    const allDone = Save.data.completed.length >= LEVELS.length;
+    const next = allDone ? 1 : Save.firstIncomplete() + 1;
+    makeButton(this, {
+      x: W / 2, y: H - 282, w: 300, h: 62,
+      label: allDone ? 'Играть заново' : 'Играть · уровень ' + next, kind: 'primary',
+      fontSize: 17, onClick: () => go(this, 'Game', { level: allDone ? 0 : Save.firstIncomplete() })
+    });
+    makeButton(this, {
+      x: W / 2, y: H - 188, w: 300, h: 54, label: 'Уровни', kind: 'ghost', fontSize: 16,
+      onClick: () => go(this, 'Levels')
+    });
+
+    this.add.text(W / 2, H - 118, 'Пройдено ' + Save.data.completed.length + ' из 12', {
+      fontFamily: MONO, fontSize: '13px', fontStyle: '500', color: HEX(PAL.soft)
+    }).setOrigin(0.5);
+
+    if (Save.data.completed.length > 0) {
+      const rst = this.add.text(W / 2, H - 64, 'сбросить прогресс', {
+        fontFamily: FONT, fontSize: '12.5px', fontStyle: '400', color: HEX(PAL.soft),
+        textDecoration: 'underline'
+      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      rst.on('pointerup', async () => {
+        const yes = await confirmDialog(this, {
+          title: 'Сбросить прогресс?', text: 'Все пройденные уровни будут забыты. Действие нельзя отменить.',
+          yes: 'Сбросить', no: 'Оставить', accentYes: true
+        });
+        if (yes) { Save.reset(); this.scene.restart(); }
+      });
+    }
+  }
+  // живое демо-поле: маленькое «сердечко» закрашивается само, по клетке
+    buildDemo () {
+    const dc = 34, n = 5, ox = W / 2 - n * dc / 2;
+    const oy = 224 + Math.max(0, Math.floor((H - 724) / 2));
+    if (oy + 216 < H - 313) {
+      this.add.text(W / 2, oy + 204, 'клетка за клеткой', {
+        fontFamily: MONO, fontSize: '12px', fontStyle: '500', color: HEX(PAL.soft)
+      }).setOrigin(0.5).setAlpha(0.85);
+    }
+    const g = this.add.graphics();
+    const cells = [];
+    const demo = LEVELS[1].solution;
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++)
+      if (demo[r][c] === '1') cells.push([r, c]);
+    const redraw = step => {
+      g.clear();
+      g.fillStyle(PAL.panel, 1); g.fillRect(ox, oy, n * dc, n * dc);
+      g.lineStyle(1, PAL.faint, 1);
+      for (let i = 1; i < n; i++) {
+        g.beginPath();
+        g.moveTo(ox + i * dc, oy); g.lineTo(ox + i * dc, oy + n * dc);
+        g.moveTo(ox, oy + i * dc); g.lineTo(ox + n * dc, oy + i * dc);
+        g.strokePath();
+      }
+      g.lineStyle(2, PAL.ink, 1); g.strokeRect(ox, oy, n * dc, n * dc);
+      g.fillStyle(PAL.cell, 1);
+      for (let i = 0; i < step; i++) {
+        const [r, c] = cells[i];
+        g.fillRoundedRect(ox + c * dc + 3, oy + r * dc + 3, dc - 6, dc - 6, 3);
+      }
+    };
+    redraw(0);
+    let step = 0;
+    const cycle = () => {
+      step = 0;
+      const ev = this.time.addEvent({
+        delay: 165, repeat: cells.length, callback: () => {
+          step++; redraw(Math.min(step, cells.length));
+          if (step >= cells.length) {
+            this.time.delayedCall(1500, () => {
+              this.tweens.add({ targets: g, alpha: 0, duration: 380,
+                onComplete: () => { redraw(0); g.setAlpha(1); this.time.delayedCall(300, cycle); } });
+            });
+            ev.remove();
+          }
+        }
+      });
+    };
+    cycle();
+  }
+}
+
+/* ================= LevelSelectScene ================= */
+class LevelSelectScene extends Phaser.Scene {
+  constructor () { super('Levels'); }
+  create () {
+    paperBG(this);
+    this.cameras.main.fadeIn(220, 243, 236, 220);
+    makeButton(this, {
+      x: 52, y: 52, w: 52, h: 52, label: '', kind: 'ghost', icon: Icons.back,
+      onClick: () => go(this, 'Menu')
+    });
+    const t = this.add.text(W / 2 + 8, 52, 'УРОВНИ', {
+      fontFamily: FONT, fontSize: '22px', fontStyle: '800', color: HEX(PAL.ink)
+    }).setOrigin(0.5);
+    if (t.setLetterSpacing) t.setLetterSpacing(2);
+
+    const CW = 132, GX = 18, GY = 14, X0 = 24;
+    const rows = Math.ceil(LEVELS.length / 3);
+    const avail = H - 126;                            // между шапкой и нижним отступом
+    const CH = Math.min(158, Math.floor((avail - (rows - 1) * GY) / rows));
+    const Y0 = 100 + Math.max(0, Math.floor((avail - (rows * CH + (rows - 1) * GY)) / 2));
+    LEVELS.forEach((lv, idx) => {
+      const cx = X0 + CW / 2 + (idx % 3) * (CW + GX);
+      const cy = Y0 + CH / 2 + Math.floor(idx / 3) * (CH + GY);
+      const cont = this.add.container(cx, cy);
+      const unlocked = Save.isUnlocked(idx);
+      const done = Save.isCompleted(lv.id);
+      const g = this.add.graphics();
+      g.fillStyle(PAL.panel, unlocked ? 1 : 0.55);
+      g.fillRoundedRect(-CW / 2, -CH / 2, CW, CH, 10);
+      g.lineStyle(1.6, done ? PAL.accent : PAL.faint, unlocked ? 1 : 0.55);
+      g.strokeRoundedRect(-CW / 2, -CH / 2, CW, CH, 10);
+      cont.add(g);
+      // превью
+      const pw = 92, ph = 92, px = -pw / 2, py = -CH / 2 + 16;
+      const cm = Math.floor(90 / lv.size);
+      if (unlocked) {
+        if (done) {
+          g.fillStyle(PAL.ink, 1);
+          for (let r = 0; r < lv.size; r++) for (let c = 0; c < lv.size; c++)
+            if (lv.solution[r][c] === '1')
+              g.fillRect(px + (pw - cm * lv.size) / 2 + c * cm, py + (ph - cm * lv.size) / 2 + r * cm, cm - 1, cm - 1);
+        } else {
+          g.lineStyle(1, PAL.faint, 0.9);
+          for (let i = 1; i < 4; i++) {
+            const yy = py + (ph / 4) * i;
+            g.beginPath(); g.moveTo(px, yy); g.lineTo(px + pw, yy); g.strokePath();
+          }
+          cont.add(this.add.text(0, py + ph / 2 - 2, '?', {
+            fontFamily: MONO, fontSize: '34px', fontStyle: '700', color: HEX(PAL.soft)
+          }).setOrigin(0.5));
+        }
+      } else {
+        const lg = this.add.graphics();
+        Icons.lock(lg, 0, py + ph / 2 - 2, PAL.lock);
+        cont.add(lg);
+      }
+      cont.add(this.add.text(-CW / 2 + 12, -CH / 2 + 10, String(idx + 1).padStart(2, '0'), {
+        fontFamily: MONO, fontSize: '14px', fontStyle: '700',
+        color: HEX(unlocked ? PAL.ink : PAL.lock)
+      }).setOrigin(0, 0));
+      if (done) {
+        const cg = this.add.graphics();
+        Icons.check(cg, CW / 2 - 14, -CH / 2 + 14, PAL.accent);
+        cont.add(cg);
+      }
+      cont.add(this.add.text(0, CH / 2 - 16,
+        lv.size + '×' + lv.size + (lv.hard ? ' · сложный' : ''), {
+        fontFamily: FONT, fontSize: '11.5px', fontStyle: '500',
+        color: HEX(unlocked ? PAL.soft : PAL.lock)
+      }).setOrigin(0.5));
+
+      const hit = this.add.rectangle(0, 0, CW, CH, PAL.ink, 0.001)
+        .setInteractive({ useHandCursor: true });
+      hit.on('pointerdown', () => cont.setScale(0.96));
+      hit.on('pointerout', () => cont.setScale(1));
+      hit.on('pointerup', () => {
+        cont.setScale(1);
+        if (!unlocked) { toast(this, 'Сначала пройдите предыдущий уровень'); return; }
+        go(this, 'Game', { level: idx });
+      });
+      cont.add(hit);
+    });
+  }
+}
+
+/* ================= GameScene: вся игровая логика ================= */
+class GameScene extends Phaser.Scene {
+  constructor () { super('Game'); }
+
+  init (d) {
+    this.levelIndex = clamp((d && d.level != null) ? d.level : Save.firstIncomplete(), 0, LEVELS.length - 1);
+    this.mode = 'fill';
+  }
+
+  create () {
+    paperBG(this);
+    this.cameras.main.fadeIn(220, 243, 236, 220);
+    this.level = LEVELS[this.levelIndex];
+    const n = this.n = this.level.size;
+    this.grid = new Array(n * n).fill(0);        // 0 пусто, 1 закрашено, 2 крестик
+    this.undoStack = [];
+    this.undoLeft = 3;
+    this.hintsLeft = 1;
+    this.won = false;
+    this.startTime = this.time.now;
+    this.rowClues = cluesOf(this.level.solution);
+    this.colClues = cluesOf(transpose(this.level));
+    this.rowDim = new Array(n).fill(false);
+    this.colDim = new Array(n).fill(false);
+
+    this.buildHUD();
+    this.buildField();
+    this.buildControls();
+    VK.event('level_open', { level: this.level.id });
+  }
+
+  /* ---------- HUD ---------- */
+  buildHUD () {
+    makeButton(this, {
+      x: 50, y: 52, w: 52, h: 52, label: '', kind: 'ghost', icon: Icons.back,
+      onClick: async () => {
+        if (this.won) { go(this, 'Levels'); return; }
+        const yes = await confirmDialog(this, {
+          title: 'Выйти с уровня?', text: 'Текущее поле будет сброшено. Прогресс других уровней сохранится.',
+          yes: 'Выйти', no: 'Остаться', accentYes: true
+        });
+        if (yes) { VK.event('level_exit', { level: this.level.id }); go(this, 'Levels'); }
+      }
+    });
+    const hd = this.add.text(W / 2 + 6, 42, 'УРОВЕНЬ ' + (this.levelIndex + 1), {
+      fontFamily: FONT, fontSize: '20px', fontStyle: '800', color: HEX(PAL.ink)
+    }).setOrigin(0.5);
+    if (hd.setLetterSpacing) hd.setLetterSpacing(1);
+    this.add.text(W / 2 + 6, 68,
+      this.n + '×' + this.n + (this.level.hard ? ' · сложный' : '') + '  ·  №' + (this.levelIndex + 1) + ' из 12', {
+      fontFamily: FONT, fontSize: '12.5px', fontStyle: '400', color: HEX(PAL.soft)
+    }).setOrigin(0.5);
+    const ln = this.add.graphics();
+    ln.lineStyle(1.2, PAL.faint, 0.8);
+    ln.beginPath(); ln.moveTo(24, 92); ln.lineTo(W - 24, 92); ln.strokePath();
+  }
+
+  /* ---------- поле с подсказками ---------- */
+  buildField () {
+    const n = this.n;
+    const maxRB = Math.max(...this.rowClues.map(c => c.length));
+    const maxCB = Math.max(...this.colClues.map(c => c.length));
+    const topY = 100, bottomY = H - 166;   // зона поля: от шапки до кнопок режимов
+    const availH = bottomY - topY;
+    let cell = Math.min(
+      Math.floor((W - 36) / (n + 0.62 * maxRB + 0.2)),
+      Math.floor(availH / (n + 0.5 + 0.62 * maxCB))
+    );
+    cell = clamp(cell, 20, n === 5 ? 62 : 40);
+    cell = clamp(cell, 20, n === 5 ? 58 : 40);
+    this.cell = cell;
+    const numFont = clamp(Math.round(cell * 0.5), 12, 19);
+    const clueW = maxRB * (Math.round(numFont * 0.62) + 6) + 10;
+    const clueH = maxCB * (numFont + 4) + 10;
+    this.clueW = clueW; this.clueH = clueH;
+    const bw = clueW + n * cell, bh = clueH + n * cell;
+    this.bw = bw;
+    const bx = (W - bw) / 2;
+    const by = topY + (availH - bh) / 2;
+    this.bx = bx; this.by = by;
+    this.fieldX = bx + clueW; this.fieldY = by + clueH;
+
+    // слои: панель → подсветка → сетка → клетки → числа → вспышки
+    const panelG = this.add.graphics();
+    panelG.fillStyle(PAL.panel, 1);
+    panelG.fillRoundedRect(bx - 10, by - 10, bw + 20, bh + 20, 9);
+    panelG.lineStyle(1.6, PAL.faint, 1);
+    panelG.strokeRoundedRect(bx - 10, by - 10, bw + 20, bh + 20, 9);
+
+    this.hlG = this.add.graphics();
+
+    const gridG = this.add.graphics();
+    gridG.fillStyle(0xFDF8EA, 1);
+    gridG.fillRect(this.fieldX, this.fieldY, n * cell, n * cell);
+    for (let i = 1; i < n; i++) {
+      const major = i % 5 === 0;
+      gridG.lineStyle(major ? 1.7 : 1, major ? PAL.ink : PAL.faint, major ? 0.75 : 1);
+      const x = this.fieldX + i * cell, y = this.fieldY + i * cell;
+      gridG.beginPath();
+      gridG.moveTo(x, this.fieldY); gridG.lineTo(x, this.fieldY + n * cell);
+      gridG.moveTo(this.fieldX, y); gridG.lineTo(this.fieldX + n * cell, y);
+      gridG.strokePath();
+    }
+    gridG.lineStyle(2.2, PAL.ink, 1);
+    gridG.strokeRect(this.fieldX, this.fieldY, n * cell, n * cell);
+
+    this.cellsG = this.add.graphics();
+    this.flashG = this.add.graphics();
+
+    // числа строк (справа, прижаты к полю) и столбцов (сверху, столбиком)
+    this.rowTexts = [];
+    for (let r = 0; r < n; r++) {
+      const t = this.add.text(this.fieldX - 9, this.fieldY + r * cell + cell / 2,
+        this.rowClues[r].join(' '), {
+          fontFamily: MONO, fontSize: numFont + 'px', fontStyle: '700', color: HEX(PAL.ink)
+        }).setOrigin(1, 0.5);
+      this.rowTexts.push(t);
+    }
+    this.colTexts = [];
+    for (let c = 0; c < n; c++) {
+      const t = this.add.text(this.fieldX + c * cell + cell / 2, this.fieldY - 7,
+        this.colClues[c].join('\n'), {
+          fontFamily: MONO, fontSize: numFont + 'px', fontStyle: '700',
+          color: HEX(PAL.ink), align: 'center'
+        }).setOrigin(0.5, 1);
+      if (t.setLineSpacing) t.setLineSpacing(-3);
+      this.colTexts.push(t);
+    }
+
+    // ввод: одна зона на всё поле, клетка вычисляется из координат
+    const zone = this.add.rectangle(this.fieldX, this.fieldY, n * cell, n * cell, PAL.ink, 0.001)
+      .setOrigin(0).setInteractive({ useHandCursor: true });
+    this.fieldZone = zone;
+    zone.on('pointerdown', p => {
+      const c = clamp(Math.floor((p.x - this.fieldX) / cell), 0, n - 1);
+      const r = clamp(Math.floor((p.y - this.fieldY) / cell), 0, n - 1);
+      this.tapCell(r * n + c);
+      this.highlight(r, c);
+    });
+    zone.on('pointermove', p => {
+      const c = clamp(Math.floor((p.x - this.fieldX) / cell), 0, n - 1);
+      const r = clamp(Math.floor((p.y - this.fieldY) / cell), 0, n - 1);
+      this.highlight(r, c);
+    });
+    zone.on('pointerout', () => { if (!this.won) this.hlG.clear(); });
+  }
+
+  /* ---------- нижние кнопки ---------- */
+    buildControls () {
+    // режимы — нижний ряд
+    const modes = [
+      { key: 'fill',  label: 'Закрасить', icon: Icons.cellFill },
+      { key: 'cross', label: 'Крестик',   icon: Icons.cross },
+      { key: 'erase', label: 'Ластик',    icon: Icons.eraser }
+    ];
+    this.modeBtns = {};
+    modes.forEach((m, i) => {
+      const x = 24 + 69 + i * (138 + 15);
+      const cont = this.add.container(x, H - 125);
+      const bg = this.add.graphics();
+      const icon = this.add.graphics();
+      const label = this.add.text(-24, 0, m.label, {
+        fontFamily: FONT, fontSize: '15.5px', fontStyle: '600', color: HEX(PAL.ink)
+      }).setOrigin(0, 0.5);
+      const hit = this.add.rectangle(0, 0, 138, 58, PAL.ink, 0.001)
+        .setInteractive({ useHandCursor: true });
+      hit.on('pointerdown', () => cont.setScale(0.96));
+      hit.on('pointerout', () => cont.setScale(1));
+      hit.on('pointerup', () => { cont.setScale(1); this.setMode(m.key); });
+      cont.add(bg); cont.add(icon); cont.add(label); cont.add(hit);
+      this.modeBtns[m.key] = { bg, icon, label, cont, iconFn: m.icon };
+    });
+    this.setMode('fill', true);
+
+    // действия — самый нижний ряд, отступ от края 30px
+    this.undoBtn = makeButton(this, {
+      x: 24 + 69, y: H - 57, w: 138, h: 54, label: 'Отменить · 3', kind: 'ghost', icon: Icons.undo,
+      fontSize: 13, onClick: () => this.doUndo()
+    });
+    this.hintBtn = makeButton(this, {
+      x: 24 + 69 + 153, y: H - 57, w: 138, h: 54, label: 'Подсказка · 1', kind: 'ghost', icon: Icons.bulb,
+      fontSize: 13, onClick: () => this.doHint(false)
+    });
+    makeButton(this, {
+      x: 24 + 69 + 306, y: H - 57, w: 138, h: 54, label: 'Проверить', kind: 'accent', icon: Icons.check,
+      fontSize: 13, onClick: () => this.doCheck()
+    });
+  }
+
+  setMode (key, silent) {
+    this.mode = key;
+    Object.entries(this.modeBtns).forEach(([k, b]) => {
+      const on = k === key;
+      drawBtnBg(b.bg, 138, 58, on ? 'primary' : 'ghost', true);
+      b.icon.clear();
+      b.iconFn(b.icon, -40, 0, on ? 0xF7F1E0 : PAL.ink);
+      b.label.setColor(on ? '#F7F1E0' : HEX(PAL.ink));
+    });
+    if (!silent) this.tweens.add({
+      targets: this.modeBtns[key].cont, scale: 1.05, duration: 90, yoyo: true
+    });
+  }
+
+  /* ---------- ядро: тап по клетке ---------- */
+  tapCell (i) {
+    if (this.won) return;
+    const cur = this.grid[i];
+    let next = cur;
+    if (this.mode === 'fill')  next = cur === 1 ? 0 : 1;
+    if (this.mode === 'cross') next = cur === 2 ? 0 : 2;
+    if (this.mode === 'erase') next = 0;
+    if (next === cur) return;
+    this.undoStack.push({ i, old: cur, new: next });
+    this.grid[i] = next;
+    this.redrawCells();
+    this.updateDim();
+    this.flashCell(i, next === 1 ? PAL.ink : PAL.cross);
+    this.checkAutoWin();
+    this.updateActionLabels();
+  }
+
+  redrawCells () {
+    const g = this.cellsG, n = this.n, cell = this.cell;
+    g.clear();
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+      const s = this.grid[r * n + c];
+      if (s === 1) {
+        g.fillStyle(PAL.cell, 1);
+        g.fillRoundedRect(this.fieldX + c * cell + 2, this.fieldY + r * cell + 2, cell - 4, cell - 4, 3);
+      } else if (s === 2 && !this.won) {
+        const m = cell * 0.28;
+        const x1 = this.fieldX + c * cell + m, x2 = this.fieldX + (c + 1) * cell - m;
+        const y1 = this.fieldY + r * cell + m, y2 = this.fieldY + (r + 1) * cell - m;
+        g.lineStyle(cell > 45 ? 3 : 2.4, PAL.cross, 1);
+        g.beginPath();
+        g.moveTo(x1, y1); g.lineTo(x2, y2);
+        g.moveTo(x2, y1); g.lineTo(x1, y2);
+        g.strokePath();
+      }
+    }
+  }
+
+  highlight (r, c) {
+    if (this.won) return;
+    const g = this.hlG, cell = this.cell;
+    g.clear();
+    g.fillStyle(PAL.hl, 0.45);
+    g.fillRect(this.bx - 4, this.fieldY + r * cell, this.bw + 8, cell);
+    g.fillRect(this.fieldX + c * cell, this.by - 4, cell, this.bw ? (this.clueH + this.n * cell + 8) : 0);
+  }
+
+  flashCell (i, col) {
+    const g = this.flashG, cell = this.cell, n = this.n;
+    const r = Math.floor(i / n), c = i % n;
+    g.clear();
+    g.lineStyle(2.6, col, 0.9);
+    g.strokeRoundedRect(this.fieldX + c * cell + 1, this.fieldY + r * cell + 1, cell - 2, cell - 2, 3);
+    g.setAlpha(1);
+    this.tweens.add({ targets: g, alpha: 0, duration: 300, onComplete: () => g.clear() });
+  }
+
+  /* «гашение» подсказок полностью и верно заполненных линий */
+  updateDim () {
+    const n = this.n;
+    const blocksOf = cells => {
+      const b = []; let run = 0;
+      for (const v of cells) {
+        if (v === 1) run++;
+        else { if (run) b.push(run); run = 0; }
+      }
+      if (run) b.push(run);
+      return b.length ? b : [0];
+    };
+    const eq = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+    for (let r = 0; r < n; r++) {
+      const cells = this.grid.slice(r * n, r * n + n);
+      const full = cells.every(v => v !== 0);
+      const ok = full && eq(blocksOf(cells), this.rowClues[r]);
+      if (ok !== this.rowDim[r]) {
+        this.rowDim[r] = ok;
+        this.rowTexts[r].setColor(ok ? HEX(PAL.soft) : HEX(PAL.ink));
+        this.rowTexts[r].setAlpha(ok ? 0.55 : 1);
+      }
+    }
+    for (let c = 0; c < n; c++) {
+      const cells = [];
+      for (let r = 0; r < n; r++) cells.push(this.grid[r * n + c]);
+      const full = cells.every(v => v !== 0);
+      const ok = full && eq(blocksOf(cells), this.colClues[c]);
+      if (ok !== this.colDim[c]) {
+        this.colDim[c] = ok;
+        this.colTexts[c].setColor(ok ? HEX(PAL.soft) : HEX(PAL.ink));
+        this.colTexts[c].setAlpha(ok ? 0.55 : 1);
+      }
+    }
+  }
+
+  updateActionLabels () {
+    this.undoBtn.setText('Отменить · ' + this.undoLeft);
+    this.hintBtn.setText('Подсказка · ' + this.hintsLeft);
+  }
+
+  /* ---------- отмена хода ---------- */
+  doUndo () {
+    if (this.won) return;
+    if (!this.undoStack.length) { toast(this, 'Нечего отменять'); return; }
+    if (this.undoLeft <= 0) { this.offerReward('undo'); return; }
+    const a = this.undoStack.pop();
+    this.grid[a.i] = a.old;
+    this.undoLeft--;
+    this.redrawCells();
+    this.updateDim();
+    this.flashCell(a.i, PAL.soft);
+    VK.event('undo_used', { level: this.level.id });
+    this.updateActionLabels();
+  }
+
+  /* ---------- подсказка ---------- */
+  findHint () {
+    const sol = this.level.solution, n = this.n;
+    for (let i = 0; i < n * n; i++)               // 1: должна быть закрашена
+      if (sol[Math.floor(i / n)][i % n] === '1' && this.grid[i] !== 1) return i;
+    for (let i = 0; i < n * n; i++)               // 2: закрашена зря
+      if (sol[Math.floor(i / n)][i % n] === '0' && this.grid[i] === 1) return i;
+    return null;
+  }
+
+  doHint (fromAd) {
+    if (this.won) return;
+    if (!fromAd && this.hintsLeft <= 0) { this.offerReward('hint'); return; }
+    const i = this.findHint();
+    if (i == null) { toast(this, 'Подсказка сейчас не нужна'); return; }
+    if (!fromAd) this.hintsLeft--;
+    const n = this.n;
+    const shouldBe = this.level.solution[Math.floor(i / n)][i % n] === '1';
+    this.grid[i] = shouldBe ? 1 : 0;
+    this.redrawCells();
+    this.updateDim();
+    this.flashCell(i, PAL.accent);
+    VK.event('hint_used', { level: this.level.id, via_ad: !!fromAd });
+    this.updateActionLabels();
+    this.checkAutoWin();
+  }
+
+  /* ---------- проверка и победа ---------- */
+  isWin () {
+    const n = this.n, sol = this.level.solution;
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+      const need = sol[r][c] === '1' ? 1 : 0;
+      if ((this.grid[r * n + c] === 1 ? 1 : 0) !== need) return false;
+    }
+    return true;
+  }
+
+  checkAutoWin () { if (this.isWin()) this.win(); }
+
+  doCheck () {
+    if (this.won) return;
+    if (this.isWin()) { this.win(); return; }
+    toast(this, 'Решение неверное');
+    this.tweens.add({ targets: [this.cellsG, this.fieldZone], x: 8, duration: 55,
+      yoyo: true, repeat: 3, ease: 'Sine.easeInOut' });
+    this.hlG.clear();
+  }
+
+  win () {
+    if (this.won) return;
+    this.won = true;
+    this.fieldZone.disableInteractive();
+    this.hlG.clear();
+    this.redrawCells();                    // крестики «растворяются»
+    Save.complete(this.levelIndex);
+    const elapsed = this.time.now - this.startTime;
+    VK.event('level_complete', { level: this.level.id, seconds: Math.round(elapsed / 1000) });
+    // чернильная вспышка по рамке поля
+    const wg = this.add.graphics();
+    wg.lineStyle(4, PAL.accent, 1);
+    wg.strokeRect(this.fieldX, this.fieldY, this.n * this.cell, this.n * this.cell);
+    this.tweens.add({ targets: wg, alpha: 0, duration: 700, onComplete: () => wg.destroy() });
+    this.time.delayedCall(650, () => this.showVictory(elapsed));
+  }
+
+  showVictory (elapsed) {
+    const last = this.levelIndex === LEVELS.length - 1;
+    const dim = this.add.rectangle(0, 0, W, H, 0x1E1A14, 0.5).setOrigin(0).setDepth(4100);
+    const cont = this.add.container(W / 2, H / 2 - 10).setDepth(4200).setScale(0.88).setAlpha(0);
+    const bg = this.add.graphics();
+    bg.fillStyle(PAL.panel, 1); bg.fillRoundedRect(-200, -230, 400, 470, 14);
+    bg.lineStyle(1.8, PAL.faint, 1); bg.strokeRoundedRect(-200, -230, 400, 470, 14);
+    bg.lineStyle(1, PAL.faint, 0.8); bg.strokeRoundedRect(-190, -220, 380, 450, 10);
+    cont.add(bg);
+    cont.add(this.add.text(0, -178, last ? 'Все уровни пройдены!' : 'Уровень пройден', {
+      fontFamily: FONT, fontSize: '27px', fontStyle: '800', color: HEX(PAL.ink)
+    }).setOrigin(0.5));
+    cont.add(this.add.text(0, -140, 'Разгадано: «' + this.level.name + '»', {
+      fontFamily: FONT, fontSize: '16px', fontStyle: '600', color: HEX(PAL.soft)
+    }).setOrigin(0.5));
+    cont.add(this.add.text(0, -112, 'Время · ' + fmtTime(elapsed) + '   ·   ' +
+      Save.data.completed.length + ' из 12', {
+      fontFamily: MONO, fontSize: '13px', fontStyle: '500', color: HEX(PAL.soft)
+    }).setOrigin(0.5));
+
+    // штамп «ПРОЙДЕНО» — впечатывается с нажимом
+    const stamp = this.add.container(0, -10).setAngle(-8).setAlpha(0).setScale(2.3);
+    const sg = this.add.graphics();
+    sg.lineStyle(3, PAL.accent, 0.95); sg.strokeCircle(0, 0, 48);
+    sg.lineStyle(1.5, PAL.accent, 0.95); sg.strokeCircle(0, 0, 41);
+    sg.fillStyle(PAL.accent, 0.95);
+    [-26, 26].forEach(x => {
+      sg.fillTriangle(x, -5, x + 4, 0, x, 5);
+      sg.fillTriangle(x, 5, x - 4, 0, x, -5);
+    });
+    stamp.add(sg);
+    const st = this.add.text(0, 1, 'ПРОЙДЕНО', {
+      fontFamily: FONT, fontSize: '14.5px', fontStyle: '800', color: HEX(PAL.accent)
+    }).setOrigin(0.5);
+    if (st.setLetterSpacing) st.setLetterSpacing(2);
+    stamp.add(st);
+    cont.add(stamp);
+    this.tweens.add({ targets: stamp, alpha: 0.9, scale: 1, angle: -8, duration: 340,
+      delay: 260, ease: 'Cubic.easeOut' });
+
+    cont.add(makeButton(this, {
+      x: 0, y: 110, w: 300, h: 58, label: last ? 'К выбору уровней' : 'Следующий уровень',
+      kind: 'primary', fontSize: 16.5,
+      onClick: () => last ? go(this, 'Levels') : this.scene.restart({ level: this.levelIndex + 1 })
+    }).cont);
+    cont.add(makeButton(this, {
+      x: 0, y: 176, w: 300, h: 50, label: last ? 'В меню' : 'К выбору уровней',
+      kind: 'ghost', fontSize: 15,
+      onClick: () => go(this, last ? 'Menu' : 'Levels')
+    }).cont);
+    this.tweens.add({ targets: cont, scale: 1, alpha: 1, duration: 200, ease: 'Cubic.easeOut' });
+  }
+
+  /* ---------- реклама за бустеры ---------- */
+  async offerReward (kind) {
+    if (this.won) return;
+    const yes = await confirmDialog(this, {
+      title: kind === 'undo' ? 'Закончились отмены' : 'Закончились подсказки',
+      text: kind === 'undo'
+        ? 'Посмотрите короткое видео и получите +3 отмены хода для этого уровня.'
+        : 'Посмотрите короткое видео и получите +1 подсказку для этого уровня.',
+      yes: 'Смотреть', no: 'Не сейчас'
+    });
+    if (!yes || this.won) return;
+    VK.event('reward_requested', { kind, level: this.level.id });
+    const res = VK.ready ? await VK.showRewarded() : await demoAd(this);
+    if (res === 'reward') {
+      VK.event('reward_completed', { kind, level: this.level.id });
+      if (kind === 'undo') {
+        this.undoLeft += 3;
+        toast(this, '+3 отмены хода');
+        this.updateActionLabels();
+      } else {
+        toast(this, '+1 подсказка');
+        this.doHint(true);
+      }
+    } else {
+      VK.event('reward_failed', { kind, reason: res });
+      toast(this, res === 'closed'
+        ? 'Реклама не досмотрена — награда не выдана'
+        : 'Реклама сейчас недоступна');
+    }
+  }
+}
+
+/* ================= запуск ================= */
+new Phaser.Game({
+  type: Phaser.AUTO,
+  parent: 'app',
+  width: W, height: H,
+  backgroundColor: '#F3ECDC',
+  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+  scene: [BootScene, MenuScene, LevelSelectScene, GameScene]
+});
+
+})();
+</script>
+</body>
+</html>
