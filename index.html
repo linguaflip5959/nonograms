@@ -109,10 +109,12 @@ function withTimeout (p, ms) {
   return Promise.race([Promise.resolve(p),
     new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 }
+
 function fmtTime (ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
   return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
 }
+
 // числовые подсказки из строки вида '0110101'
 function cluesOf (lines) {
   return lines.map(s => {
@@ -125,6 +127,7 @@ function cluesOf (lines) {
     return res.length ? res : [0];
   });
 }
+
 function transpose (lv) {
   const cols = [];
   for (let c = 0; c < lv.size; c++) {
@@ -619,8 +622,6 @@ function checkLevel (lv) {
   if (cnt === 1) return { ok: true, text: 'уникально (нужен перебор)' };
   return { ok: false, text: 'НЕОДНОЗНАЧНО: ≥2 решений' };
 }
-
-
 
 function runSelfCheck (scene) {
   const results = LEVELS.map(lv => {
@@ -1205,7 +1206,7 @@ class GameScene extends Phaser.Scene {
   }
 
     /* ---------- памятка об экономике инструментов ---------- */
-      showEraserRules (force) {
+  showEraserRules (force) {
     if (Save.sessionRulesEraser && !force) return Promise.resolve(true);
     Save.sessionRulesEraser = true;               // раз за сессию — живёт вне сцены
     if (!Save.data.rulesEraser) {                  // раз за жизнь сохранения
@@ -1581,9 +1582,9 @@ class GameScene extends Phaser.Scene {
     const dim = this.add.rectangle(0, 0, W, H, 0x1E1A14, 0.5).setOrigin(0).setDepth(4100);
     const cont = this.add.container(W / 2, H / 2 - 10).setDepth(4200).setScale(0.88).setAlpha(0);
     const bg = this.add.graphics();
-    bg.fillStyle(PAL.panel, 1); bg.fillRoundedRect(-200, -230, 400, 470, 14);
-    bg.lineStyle(1.8, PAL.faint, 1); bg.strokeRoundedRect(-200, -230, 400, 470, 14);
-    bg.lineStyle(1, PAL.faint, 0.8); bg.strokeRoundedRect(-190, -220, 380, 450, 10);
+    bg.fillStyle(PAL.panel, 1); bg.fillRoundedRect(-200, -230, 400, 510, 14);
+    bg.lineStyle(1.8, PAL.faint, 1); bg.strokeRoundedRect(-200, -230, 400, 511, 14);
+    bg.lineStyle(1, PAL.faint, 0.8); bg.strokeRoundedRect(-190, -220, 380,492, 10);
     cont.add(bg);
     const hd = this.add.text(0, -178, last ? 'ВСЁ ПРОЙДЕНО!' : 'КРОССВОРД РЕШЁН', {
       fontFamily: FONT, fontSize: '25px', fontStyle: '800', color: HEX(PAL.ink)
@@ -1612,7 +1613,12 @@ class GameScene extends Phaser.Scene {
       fontFamily: MONO, fontSize: '13px', fontStyle: '500', color: HEX(PAL.soft)
     }).setOrigin(0.5));
 
-    const stamp = this.add.container(0, 0).setAngle(-8).setAlpha(0).setScale(2.3);
+    // карточка-награда между статистикой и печатью
+    const cardBottom = this.buildRewardCard(cont, -52);
+
+    // печать ложится на нижний правый угол карточки — как настоящий штамп
+    const stamp = this.add.container(89, cardBottom -34)
+      .setAngle(-8).setAlpha(0).setScale(2.3).setDepth(30);
     const sg = this.add.graphics();
     sg.lineStyle(3, PAL.accent, 0.95); sg.strokeCircle(0, 0, 52);
     sg.lineStyle(1.5, PAL.accent, 0.95); sg.strokeCircle(0, 0, 45);
@@ -1652,16 +1658,48 @@ class GameScene extends Phaser.Scene {
     });
 
     cont.add(makeButton(this, {
-      x: 0, y: 110, w: 300, h: 58, label: last ? 'К выбору уровней' : 'Следующий уровень',
+      x: 0, y: 152, w: 300, h: 58, label: last ? 'К выбору уровней' : 'Следующий уровень',
       kind: 'primary', fontSize: 16.5,
       onClick: () => last ? go(this, 'Levels') : this.scene.restart({ level: this.levelIndex + 1 })
     }).cont);
     cont.add(makeButton(this, {
-      x: 0, y: 176, w: 300, h: 50, label: last ? 'В меню' : 'К выбору уровней',
+      x: 0, y: 216, w: 300, h: 50, label: last ? 'В меню' : 'К выбору уровней',
       kind: 'ghost', fontSize: 15,
       onClick: () => go(this, last ? 'Menu' : 'Levels')
     }).cont);
     this.tweens.add({ targets: cont, scale: 1, alpha: 1, duration: 200, ease: 'Cubic.easeOut' });
+  }
+
+  /* ---------- карточка-награда: картинка уровня крупно ---------- */
+  buildRewardCard (cont, yTop) {
+    const n = this.n;
+    const RW = 160; // ширина карточки
+    const cell = Math.floor((RW - 20) / n);
+    const px = -(cell * n) / 2, py = yTop + (RW - cell * n) / 2;
+    const card = this.add.graphics();
+    // мягкая тень: карточка чуть приподнята над «документом»
+    card.fillStyle(0x272119, 0.08);
+    card.fillRoundedRect(-RW / 2 + 3, yTop + 4, RW, RW, 6);
+    card.fillStyle(0xFDF8EA, 1);                     // паспарту
+    card.fillRoundedRect(-RW / 2, yTop, RW, RW, 6);
+    card.lineStyle(1.6, PAL.faint, 1);
+    card.strokeRoundedRect(-RW / 2, yTop, RW, RW, 6);
+    cont.add(card);
+    // клетки-«пиксели» — те же solution-данные
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+      if (this.level.solution[r][c] !== '1') continue;
+      const g = this.add.graphics();
+      g.fillStyle(PAL.cell, 1);
+      g.fillRect(px + c * cell, py + r * cell, cell - 1, cell - 1);
+      g.setAlpha(0);
+      cont.add(g);
+      this.tweens.add({
+        targets: g, alpha: 1, duration: 60,
+        delay: 200 + (r + c) * 45,                    // проявление по диагонали
+        onComplete: () => { /* остаётся */ }
+      });
+    }
+    return yTop + RW;                                 // нижний край карточки
   }
 
   /* ---------- реклама за бустеры ---------- */
