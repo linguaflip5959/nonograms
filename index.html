@@ -1579,7 +1579,8 @@ class GameScene extends Phaser.Scene {
 
   showVictory (elapsed) {
     const last = this.levelIndex === LEVELS.length - 1;
-    const dim = this.add.rectangle(0, 0, W, H, 0x1E1A14, 0.5).setOrigin(0).setDepth(4100);
+    const dim = this.add.rectangle(0, 0, W, H, 0x1E1A14, 0.5).setOrigin(0).setDepth(4100)
+    .setInteractive({ useHandCursor: false });
     const cont = this.add.container(W / 2, H / 2 - 10).setDepth(4200).setScale(0.88).setAlpha(0);
     const bg = this.add.graphics();
     bg.fillStyle(PAL.panel, 1); bg.fillRoundedRect(-200, -230, 400, 510, 14);
