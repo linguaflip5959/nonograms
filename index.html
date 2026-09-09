@@ -72,6 +72,22 @@ const PAL = {
 const HEX = c => '#' + c.toString(16).padStart(6, '0');
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
+/* ================= уровень 0 (обучение) и текст правил ================= */
+const TUTORIAL = {
+  id: 0, size: 5, name: 'Пробный',
+  solution: ['00100', '01110', '11111', '01110', '00100']
+};
+// предзаполнение: крестики почти везде, закрашены 2 клетки; игроку — докрасить 3
+const TUTORIAL_PREFILL = { crosses: [0, 5, 10, 15, 20, 6, 16, 1, 2, 3, 4, 21, 22, 23], fills: [7, 12] };
+
+const RULES_TEXT = [
+  ['Цифры — это группы', 'Число слева от строки: сколько клеток подряд закрашено в ней. 5 — вся строка. 1 1 — две одиночные клетки с разрывом. Столбцы читаются так же, сверху.'],
+  ['Порядок — закон', 'Группы идут в том же порядке, что и цифры, слева направо и сверху вниз. Между группами всегда есть разрыв в одну клетку или больше.'],
+  ['Три состояния клетки', 'Пустая — ты ещё не решил. Закрашенная — решение, тапом её не снять. Крестик — пометка «здесь пусто», ставится и снимается бесплатно.'],
+  ['Ошибка и исправление', 'Закрашенное стирает ластик — за одну отмену. Отмен на уровень три, дальше — реклама за +3. Подсказка откроет верную клетку.'],
+  ['Победа', 'Когда все нужные клетки закрашены и лишних нет — картинка проявится сама. «Проверить» скажет, если ещё не сошлось.']
+];
+
 /* ================= 12 уровней (4×5×5, 6×10×10, 2×10×10 сложные) ================= */
 const LEVELS = [
   { id: 1,  size: 5,  name: 'Крест',    solution: ['00100','01110','11111','01110','00100'] },
@@ -660,6 +676,47 @@ const DOCS = {
   agreement: 'https://linguaflip5959.github.io/nonograms/agreement.html',
   privacy:   'https://linguaflip5959.github.io/nonograms/privacy.html'
 };
+
+/* ================= правила игры: модалка «?» ================= */
+function rulesOverlay (scene) {
+  return new Promise(resolve => {
+    const dim = scene.add.rectangle(0, 0, W, H, 0x272119, 0.55).setOrigin(0)
+      .setDepth(4900).setInteractive({ useHandCursor: false });
+    const cont = scene.add.container(W / 2, H / 2).setDepth(5000)
+      .setScale(0.94).setAlpha(0);
+    const bg = scene.add.graphics();
+    bg.fillStyle(PAL.panel, 1); bg.fillRoundedRect(-205, -235, 410, 470, 14);
+    bg.lineStyle(1.6, PAL.faint, 1); bg.strokeRoundedRect(-205, -235, 410, 470, 14);
+    cont.add(bg);
+    cont.add(scene.add.text(0, -196, 'Как играть', {
+      fontFamily: FONT, fontSize: '22px', fontStyle: '800', color: HEX(PAL.ink)
+    }).setOrigin(0.5));
+
+    RULES_TEXT.forEach((r, i) => {
+      const y = -158 + i * 74;
+      const t = scene.add.text(-175, y, r[0], {
+        fontFamily: FONT, fontSize: '14.5px', fontStyle: '600', color: HEX(PAL.ink)
+      }).setOrigin(0, 0.5);
+      const d = scene.add.text(-175, y + 19, r[1], {
+        fontFamily: FONT, fontSize: '12px', fontStyle: '400',
+        color: HEX(PAL.soft), wordWrap: { width: 350 }
+      }).setOrigin(0, 0);
+      cont.add(t); cont.add(d);
+    });
+
+    const done = v => { dim.destroy(); cont.destroy(); resolve(v); };
+    cont.add(makeButton(scene, {
+      x: -95, y: 192, w: 160, h: 54, label: 'Попробовать', kind: 'primary', fontSize: 15,
+      depth: 5010, onClick: () => done('tutorial')
+    }).cont);
+    cont.add(makeButton(scene, {
+      x: 95, y: 192, w: 160, h: 54, label: 'Понятно', kind: 'ghost', fontSize: 15,
+      depth: 5010, onClick: () => done('ok')
+    }).cont);
+    scene.tweens.add({ targets: cont, scale: 1, alpha: 1, duration: 180, ease: 'Cubic.easeOut' });
+  });
+}
+
 function consentOverlay (scene) {
   return new Promise(resolve => {
     const dim = scene.add.rectangle(0, 0, W, H, 0x272119, 0.55).setOrigin(0)
@@ -778,12 +835,25 @@ class MenuScene extends Phaser.Scene {
 
     this.buildDemo();
 
+    // пункт «Как играть» — открывает правила; «Попробовать» ведёт в уровень 0
+    makeButton(this, {
+      x: W / 2, y: H - 230, w: 300, h: 44, label: 'Как играть', kind: 'ghost', fontSize: 15,
+      onClick: async () => {
+        const r = await rulesOverlay(this);
+        if (r === 'tutorial') go(this, 'Game', { level: 'tutorial' });
+      }
+    });
+
     const allDone = Save.data.completed.length >= LEVELS.length;
     const next = allDone ? 1 : Save.firstIncomplete() + 1;
+    const firstTime = !Save.data.tutorialDone;   // свежий аккаунт — сначала уровень 0
     makeButton(this, {
       x: W / 2, y: H - 282, w: 300, h: 62,
       label: allDone ? 'Играть заново' : 'Играть · уровень ' + next, kind: 'primary',
-      fontSize: 17, onClick: () => go(this, 'Game', { level: allDone ? 0 : Save.firstIncomplete() })
+      fontSize: 17, onClick: () => {
+        if (firstTime) { Save.data.tutorialDone = true; Save.persist(); go(this, 'Game', { level: 'tutorial' }); }
+        else go(this, 'Game', { level: allDone ? 0 : Save.firstIncomplete() });
+      }
     });
     makeButton(this, {
       x: W / 2, y: H - 206, w: 300, h: 40, label: 'Уровни', kind: 'ghost', fontSize: 16,
@@ -968,6 +1038,7 @@ class GameScene extends Phaser.Scene {
   constructor () { super('Game'); }
 
   init (d) {
+    this.isTutorial = d && d.level === 'tutorial';
     this.levelIndex = clamp((d && d.level != null) ? d.level : Save.firstIncomplete(), 0, LEVELS.length - 1);
     this.mode = 'fill';
   }
@@ -976,8 +1047,13 @@ class GameScene extends Phaser.Scene {
     paperBG(this);
     this.cameras.main.fadeIn(220, 243, 236, 220);
     this.level = LEVELS[this.levelIndex];
+    if (this.isTutorial) this.level = TUTORIAL;
     const n = this.n = this.level.size;
     this.grid = new Array(n * n).fill(0);        // 0 пусто, 1 закрашено, 2 крестик
+    if (this.isTutorial) {
+      TUTORIAL_PREFILL.fills.forEach(i => { this.grid[i] = 1; });
+      TUTORIAL_PREFILL.crosses.forEach(i => { this.grid[i] = 2; });
+    }
     this.undoStack = [];
     this.undoLeft = 3;
     this.hintsLeft = 1;
@@ -995,6 +1071,7 @@ class GameScene extends Phaser.Scene {
     this.buildField();
     this.buildStatus();
     this.buildControls();
+    if (this.isTutorial) this.redrawCells();   // поле уже построено — рисуем предзаполнение
     VK.event('level_open', { level: this.level.id });
   }
 
@@ -1011,6 +1088,13 @@ class GameScene extends Phaser.Scene {
         if (yes) { VK.event('level_exit', { level: this.level.id }); go(this, 'Levels'); }
       }
     });
+
+    // «?» — правила под рукой, не выходя из уровня
+    makeButton(this, {
+      x: W - 115, y: 52, w: 52, h: 52, label: '?', kind: 'ghost', fontSize: 20,
+      onClick: () => { rulesOverlay(this); }
+    });
+
     // очистка поля: бесплатна (выход/вход давал то же), с подтверждением
     makeButton(this, {
       x: W - 50, y: 52, w: 52, h: 52, label: '', kind: 'ghost', icon: Icons.reset,
@@ -1567,7 +1651,8 @@ class GameScene extends Phaser.Scene {
         onComplete: () => g.destroy()
       });
     }
-    Save.complete(this.levelIndex);
+    if (this.isTutorial) { this.hintsUsed = 0; this.undosUsed = 0; }
+    else Save.complete(this.levelIndex);
     const elapsed = this.time.now - this.startTime;
     VK.event('level_complete', { level: this.level.id, seconds: Math.round(elapsed / 1000) });
     const wg = this.add.graphics();
@@ -1578,6 +1663,7 @@ class GameScene extends Phaser.Scene {
   }
 
   showVictory (elapsed) {
+    if (this.isTutorial) { this.showTutorialWin(); return; }
     const last = this.levelIndex === LEVELS.length - 1;
     const dim = this.add.rectangle(0, 0, W, H, 0x1E1A14, 0.5).setOrigin(0).setDepth(4100)
     .setInteractive({ useHandCursor: false });
@@ -1701,6 +1787,29 @@ class GameScene extends Phaser.Scene {
       });
     }
     return yTop + RW;                                 // нижний край карточки
+  }
+
+    /* ---------- короткая победа уровня 0 ---------- */
+  showTutorialWin () {
+    const dim = this.add.rectangle(0, 0, W, H, 0x1E1A14, 0.45).setOrigin(0).setDepth(4100)
+      .setInteractive({ useHandCursor: false });
+    const cont = this.add.container(W / 2, H / 2).setDepth(4200).setScale(0.9).setAlpha(0);
+    const bg = this.add.graphics();
+    bg.fillStyle(PAL.panel, 1); bg.fillRoundedRect(-160, -110, 320, 220, 14);
+    bg.lineStyle(1.6, PAL.faint, 1); bg.strokeRoundedRect(-160, -110, 320, 220, 14);
+    cont.add(bg);
+    cont.add(this.add.text(0, -64, 'Получилось!', {
+      fontFamily: FONT, fontSize: '22px', fontStyle: '800', color: HEX(PAL.ink)
+    }).setOrigin(0.5));
+    cont.add(this.add.text(0, -24, 'Теперь ты знаешь всё.\nКрестик — «пусто», закрашенное — решение.\nДальше — 12 картинок.', {
+      fontFamily: FONT, fontSize: '13.5px', fontStyle: '400', color: HEX(PAL.soft),
+      align: 'center', wordWrap: { width: 280 }
+    }).setOrigin(0.5));
+    cont.add(makeButton(this, {
+      x: 0, y: 58, w: 240, h: 54, label: 'К уровням', kind: 'primary', fontSize: 15,
+      onClick: () => { Save.data.tutorialDone = true; Save.persist(); go(this, 'Levels'); }
+    }).cont);
+    this.tweens.add({ targets: cont, scale: 1, alpha: 1, duration: 200, ease: 'Cubic.easeOut' });
   }
 
   /* ---------- реклама за бустеры ---------- */
