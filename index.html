@@ -78,7 +78,11 @@ const TUTORIAL = {
   solution: ['00100', '01110', '11111', '01110', '00100']
 };
 // предзаполнение: крестики почти везде, закрашены 2 клетки; игроку — докрасить 3
-const TUTORIAL_PREFILL = { crosses: [0, 5, 10, 15, 20, 6, 16, 1, 2, 3, 4, 21, 22, 23], fills: [7, 12] };
+// уровень 0: решение — «крест»; игроку остаётся докрасить 3 клетки
+const TUTORIAL_PREFILL = {
+  fills:  [6, 7, 8, 11, 12, 13, 14, 16, 17, 18],        // уже закрашено
+  crosses: [0, 1, 3, 4, 5, 9, 15, 19, 20, 21, 23, 24]   // «здесь пусто»
+};
 
 const RULES_TEXT = [
   ['Цифры — это группы', 'Число слева от строки: сколько клеток подряд закрашено в ней. 5 — вся строка. 1 1 — две одиночные клетки с разрывом. Столбцы читаются так же, сверху.'],
@@ -685,8 +689,8 @@ function rulesOverlay (scene) {
     const cont = scene.add.container(W / 2, H / 2).setDepth(5000)
       .setScale(0.94).setAlpha(0);
     const bg = scene.add.graphics();
-    bg.fillStyle(PAL.panel, 1); bg.fillRoundedRect(-205, -235, 410, 470, 14);
-    bg.lineStyle(1.6, PAL.faint, 1); bg.strokeRoundedRect(-205, -235, 410, 470, 14);
+    bg.fillStyle(PAL.panel, 1); bg.fillRoundedRect(-205, -235, 410, 500, 14);
+    bg.lineStyle(1.6, PAL.faint, 1); bg.strokeRoundedRect(-205, -235, 410, 500, 14);
     cont.add(bg);
     cont.add(scene.add.text(0, -196, 'Как играть', {
       fontFamily: FONT, fontSize: '22px', fontStyle: '800', color: HEX(PAL.ink)
@@ -706,11 +710,11 @@ function rulesOverlay (scene) {
 
     const done = v => { dim.destroy(); cont.destroy(); resolve(v); };
     cont.add(makeButton(scene, {
-      x: -95, y: 192, w: 160, h: 54, label: 'Попробовать', kind: 'primary', fontSize: 15,
+      x: -95, y: 230, w: 160, h: 54, label: 'Попробовать', kind: 'primary', fontSize: 15,
       depth: 5010, onClick: () => done('tutorial')
     }).cont);
     cont.add(makeButton(scene, {
-      x: 95, y: 192, w: 160, h: 54, label: 'Понятно', kind: 'ghost', fontSize: 15,
+      x: 95, y: 230, w: 160, h: 54, label: 'Понятно', kind: 'ghost', fontSize: 15,
       depth: 5010, onClick: () => done('ok')
     }).cont);
     scene.tweens.add({ targets: cont, scale: 1, alpha: 1, duration: 180, ease: 'Cubic.easeOut' });
@@ -835,9 +839,9 @@ class MenuScene extends Phaser.Scene {
 
     this.buildDemo();
 
-    // пункт «Как играть» — открывает правила; «Попробовать» ведёт в уровень 0
+    // «Как играть» — открывает правила; «Попробовать» ведёт в уровень 0
     makeButton(this, {
-      x: W / 2, y: H - 230, w: 300, h: 44, label: 'Как играть', kind: 'ghost', fontSize: 15,
+      x: W / 2, y: H - 169, w: 300, h: 44, label: 'Как играть', kind: 'ghost', fontSize: 15,
       onClick: async () => {
         const r = await rulesOverlay(this);
         if (r === 'tutorial') go(this, 'Game', { level: 'tutorial' });
@@ -855,13 +859,15 @@ class MenuScene extends Phaser.Scene {
         else go(this, 'Game', { level: allDone ? 0 : Save.firstIncomplete() });
       }
     });
+    // кнопка Уровни
     makeButton(this, {
-      x: W / 2, y: H - 206, w: 300, h: 40, label: 'Уровни', kind: 'ghost', fontSize: 16,
+      x: W / 2, y: H - 221, w: 300, h: 40, label: 'Уровни', kind: 'ghost', fontSize: 16,
       onClick: () => go(this, 'Levels')
     });
 
-        const sndBtn = makeButton(this, {
-      x: W / 2, y: H - 155, w: 300, h: 44,
+    // кнопка Звук
+    const sndBtn = makeButton(this, {
+      x: W / 2, y: H - 115, w: 300, h: 44,
       label: 'Звук: ' + (Save.data.sound === false ? 'выкл' : 'вкл'),
       kind: 'ghost', fontSize: 14,
             onClick: () => {
@@ -874,7 +880,8 @@ class MenuScene extends Phaser.Scene {
       }
     });
 
-    this.add.text(W / 2, H - 118, 'Пройдено ' + Save.data.completed.length + ' из 12', {
+    // текст Пройдено
+    this.add.text(W / 2, H - 80, 'Пройдено ' + Save.data.completed.length + ' из 12', {
       fontFamily: MONO, fontSize: '13px', fontStyle: '500', color: HEX(PAL.soft)
     }).setOrigin(0.5);
 
@@ -1038,8 +1045,9 @@ class GameScene extends Phaser.Scene {
   constructor () { super('Game'); }
 
   init (d) {
-    this.isTutorial = d && d.level === 'tutorial';
-    this.levelIndex = clamp((d && d.level != null) ? d.level : Save.firstIncomplete(), 0, LEVELS.length - 1);
+    const lv = (d && d.level != null) ? d.level : Save.firstIncomplete();
+    this.isTutorial = lv === 'tutorial';
+    this.levelIndex = this.isTutorial ? 0 : clamp(lv, 0, LEVELS.length - 1);
     this.mode = 'fill';
   }
 
@@ -1109,11 +1117,14 @@ class GameScene extends Phaser.Scene {
         if (yes && !this.won) this.clearField();
       }
     });
-    const hd = this.add.text(W / 2 + 6, 42, 'УРОВЕНЬ ' + (this.levelIndex + 1), {
+
+    const hd = this.add.text(W / 2 + 6, 42,
+      this.isTutorial ? 'ОБУЧЕНИЕ' : 'УРОВЕНЬ ' + (this.levelIndex + 1), {
       fontFamily: FONT, fontSize: '20px', fontStyle: '800', color: HEX(PAL.ink)
     }).setOrigin(0.5);
     if (hd.setLetterSpacing) hd.setLetterSpacing(1);
-    this.add.text(W / 2 + 6, 68,
+     this.add.text(W / 2 + 6, 68,
+      this.isTutorial ? 'обучение' :
       this.n + '×' + this.n + (this.level.hard ? ' · сложный' : '') + '  ·  №' + (this.levelIndex + 1) + ' из 12', {
       fontFamily: FONT, fontSize: '12.5px', fontStyle: '400', color: HEX(PAL.soft)
     }).setOrigin(0.5);
