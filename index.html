@@ -721,48 +721,65 @@ function rulesOverlay (scene) {
   });
 }
 
+/* ================= согласие при первом запуске ================= */
 function consentOverlay (scene) {
   return new Promise(resolve => {
     const dim = scene.add.rectangle(0, 0, W, H, 0x272119, 0.55).setOrigin(0)
       .setDepth(4900).setInteractive({ useHandCursor: false });
-    const cont = scene.add.container(W / 2, H / 2 - 10).setDepth(5000)
+    const cont = scene.add.container(W / 2, H / 2).setDepth(5000)
       .setScale(0.92).setAlpha(0);
+
+    const CW = 400;                                   // ширина карточки
     const bg = scene.add.graphics();
-    bg.fillStyle(PAL.panel, 1); bg.fillRoundedRect(-190, -215, 380, 430, 14);
-    bg.lineStyle(1.6, PAL.faint, 1); bg.strokeRoundedRect(-190, -215, 380, 430, 14);
+    bg.fillStyle(PAL.panel, 1); bg.fillRoundedRect(-CW / 2, -225, CW, 460, 14);
+    bg.lineStyle(1.6, PAL.faint, 1); bg.strokeRoundedRect(-CW / 2, -225, CW, 460, 14);
     cont.add(bg);
-    cont.add(scene.add.text(0, -178, 'Условия использования', {
-      fontFamily: FONT, fontSize: '21px', fontStyle: '800', color: HEX(PAL.ink)
-    }).setOrigin(0.5));
-    cont.add(scene.add.text(0, -122,
+
+    // Заголовок и текст: позиционируем от верха, зазоры — в явных px
+    const title = scene.add.text(0, -190, 'Условия использования', {
+      fontFamily: FONT, fontSize: '20px', fontStyle: '800', color: HEX(PAL.ink)
+    }).setOrigin(0.5, 0);
+    cont.add(title);
+
+    const body = scene.add.text(0, -146,
       'Игра сохраняет ваш прогресс прохождения и обезличенную статистику ' +
       'в хранилище ВКонтакте. Реклама показывается только по вашему запросу.\n\n' +
       'Продолжая, вы принимаете условия пользовательского соглашения ' +
       'и политики конфиденциальности.', {
       fontFamily: FONT, fontSize: '13.5px', fontStyle: '400', color: HEX(PAL.soft),
-      align: 'center', wordWrap: { width: 330 }
-    }).setOrigin(0.5));
-    const openDoc = url => {
+      align: 'center', wordWrap: { width: CW - 56 }
+    }).setOrigin(0.5, 0);
+    cont.add(body);
+
+    // Ссылки: ПОСЛЕ тела, отсчитываем от его фактического низа —
+    // это и есть «резиновый» отступ, не зависящий от метрик шрифта
+    const linkY = body.y + body.height + 26;
+        const openDoc = url => {
       let w = null;
       try { w = window.open(url, '_blank'); } catch (e) {}
       if (!w) toast(scene, 'Не удалось открыть — ссылка есть в описании приложения');
     };
-    [['Пользовательское соглашение', DOCS.agreement, -48],
-     ['Политика конфиденциальности', DOCS.privacy, -16]].forEach(([t, url, y]) => {
+    const done = v => { dim.destroy(); cont.destroy(); resolve(v); };
+    [['Пользовательское соглашение', DOCS.agreement],
+     ['Политика конфиденциальности', DOCS.privacy]].forEach(([t, url], i) => {
+      const y = linkY + i * 34;
       const link = scene.add.text(0, y, t, {
         fontFamily: FONT, fontSize: '13.5px', fontStyle: '500',
         color: HEX(PAL.accent), textDecoration: 'underline'
-      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      }).setOrigin(0.5, 0);
+      link.setInteractive({ useHandCursor: true });   // ← явный интерактив на тексте
       link.on('pointerup', () => openDoc(url));
       cont.add(link);
     });
-    const done = v => { dim.destroy(); cont.destroy(); resolve(v); };
+
+    // Кнопки — от фактического низа ссылок: карточка целиком «резиновая»
+    const btnTop = Math.max(linkY + 34 + 16 + 14, 96);
     cont.add(makeButton(scene, {
-      x: 0, y: 96, w: 300, h: 58, label: 'Принять и играть', kind: 'primary',
+      x: 0, y: btnTop + 28, w: 300, h: 56, label: 'Принять и играть', kind: 'primary',
       fontSize: 16, depth: 5010, onClick: () => done(true)
     }).cont);
     cont.add(makeButton(scene, {
-      x: 0, y: 158, w: 300, h: 48, label: 'Отказаться', kind: 'ghost',
+      x: 0, y: btnTop + 92, w: 300, h: 48, label: 'Отказаться', kind: 'ghost',
       fontSize: 15, depth: 5010, onClick: () => done(false)
     }).cont);
     scene.tweens.add({ targets: cont, scale: 1, alpha: 1, duration: 180, ease: 'Cubic.easeOut' });
