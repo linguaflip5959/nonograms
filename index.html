@@ -168,12 +168,16 @@ const VK = {
     catch (e) { this.ready = false; }
     return this.ready;
   },
-  async showRewarded () {           // 'reward' | 'closed' | 'error'
+    async showRewarded () {           // 'reward' | 'closed' | 'error'
     if (!this.ready) return 'demo'; // вне ВК — вызывающий покажет демо-оверлей
     try {
       const r = await withTimeout(this.bridge.send('VKWebAppShowNativeAds', { ad_format: 'reward' }), 150000);
+      console.log('[ads] ответ:', JSON.stringify(r));   // лог для повторной проверки
       return (r && r.result === false) ? 'closed' : 'reward';
-    } catch (e) { return 'error'; }
+    } catch (e) {
+      console.log('[ads] ошибка:', (e && e.message) || e);
+      return 'error';
+    }
   },
       event (name, data) {
     if (!this.ready) console.log('%c[event] ' + name, 'color:#B9452C', data || {});
@@ -308,7 +312,7 @@ function paperBG (scene) {
 function drawBtnBg (g, w, h, kind, enabled) {
   g.clear();
   const a = enabled ? 1 : 0.45;
-  if (kind === 'primary') { g.fillStyle(PAL.ink, a); g.fillRoundedRect(-w / 2, -h / 2, w, h, 11); }
+  if (kind === 'primary') { g.fillStyle(0x2E2820, a); g.fillRoundedRect(-w / 2, -h / 2, w, h, 11); }
   else if (kind === 'accent') { g.fillStyle(PAL.accent, a); g.fillRoundedRect(-w / 2, -h / 2, w, h, 11); }
   else {
     g.fillStyle(PAL.panel, a); g.fillRoundedRect(-w / 2, -h / 2, w, h, 11);
@@ -323,17 +327,15 @@ function makeButton (scene, o) {
   drawBtnBg(bg, o.w, o.h, o.kind || 'ghost', true);
   cont.add(bg);
   const light = (o.kind === 'primary' || o.kind === 'accent');
-  let iconX = 0, labelX = 0;
   if (o.icon) {
     const gi = scene.add.graphics();
     o.icon(gi, -o.w / 2 + 30, 0, light ? 0xF7F1E0 : PAL.ink);
     cont.add(gi);
-    iconX = -o.w / 2 + 30; labelX = iconX + 15;
   }
-  const label = scene.add.text(o.icon ? labelX : 0, 0, o.label, {
+  const label = scene.add.text(o.icon ? 15 : 0, 0, o.label, {
     fontFamily: FONT, fontSize: (o.fontSize || 16) + 'px', fontStyle: '600',
     color: light ? '#F7F1E0' : HEX(PAL.ink)
-  }).setOrigin(o.icon ? 0 : 0.5, 0.5);
+  }).setOrigin(0.5, 0.5);
   cont.add(label);
   const hit = scene.add.rectangle(0, 0, o.w, o.h, PAL.ink, 0.001)
     .setInteractive({ useHandCursor: true });
@@ -1281,7 +1283,7 @@ class GameScene extends Phaser.Scene {
       { key: 'cross', label: 'Крестик',    icon: Icons.cross },
       { key: 'erase', label: 'Ластик', icon: Icons.eraser }
     ];
-    const MW = 134, GAP = 15;
+    const MW = 138, GAP = 15;
     const X0 = (W - (modes.length * MW + (modes.length - 1) * GAP)) / 2;
     this.modeBtns = {};
     modes.forEach((m, i) => {
@@ -1289,7 +1291,7 @@ class GameScene extends Phaser.Scene {
       const cont = this.add.container(x, H - 125);
       const bg = this.add.graphics();
       const icon = this.add.graphics();
-      const label = this.add.text(0, 0, m.label, {
+      const label = this.add.text(10, 0, m.label, {
         fontFamily: FONT, fontSize: '15px', fontStyle: '600', color: HEX(PAL.ink)
       }).setOrigin(0.5, 0.5);
       const hit = this.add.rectangle(0, 0, MW, 58, PAL.ink, 0.001)
@@ -1303,16 +1305,16 @@ class GameScene extends Phaser.Scene {
     this.setMode('fill', true);
 
     // действия — самый нижний ряд (без изменений)
-    this.undoBtn = makeButton(this, {
-      x: 24 + 69, y: H - 57, w: 138, h: 54, label: 'Отменить · 3', kind: 'ghost', icon: Icons.undo,
+        this.undoBtn = makeButton(this, {
+      x: 21 + 69, y: H - 57, w: 138, h: 54, label: 'Отменить · 3', kind: 'ghost', icon: Icons.undo,
       fontSize: 13, onClick: () => this.doUndo()
     });
     this.hintBtn = makeButton(this, {
-      x: 24 + 69 + 153, y: H - 57, w: 138, h: 54, label: 'Подсказка · 1', kind: 'ghost', icon: Icons.bulb,
+      x: 21 + 69 + 153, y: H - 57, w: 138, h: 54, label: 'Подсказка · 1', kind: 'ghost', icon: Icons.bulb,
       fontSize: 13, onClick: () => this.doHint(false)
     });
     makeButton(this, {
-      x: 24 + 69 + 306, y: H - 57, w: 138, h: 54, label: 'Проверить', kind: 'accent', icon: Icons.check,
+      x: 21 + 69 + 306, y: H - 57, w: 138, h: 54, label: 'Проверить', kind: 'accent', icon: Icons.check,
       fontSize: 13, onClick: () => this.doCheck()
     });
   }
@@ -1373,7 +1375,7 @@ class GameScene extends Phaser.Scene {
       const on = k === key;
       drawBtnBg(b.bg, b.w, 58, on ? 'primary' : 'ghost', true);
       b.icon.clear();
-      b.iconFn(b.icon, -b.label.width / 2 - 13, 0, on ? 0xF7F1E0 : PAL.ink);
+      b.iconFn(b.icon, -b.w / 2 + 30, 0, on ? 0xF7F1E0 : PAL.ink);
       b.label.setColor(on ? '#F7F1E0' : HEX(PAL.ink));
     });
     if (wantErase && !silent) {
@@ -1590,6 +1592,16 @@ class GameScene extends Phaser.Scene {
     return null;
   }
 
+    /* ---------- подсказка ---------- */
+  findHint () {
+    const sol = this.level.solution, n = this.n;
+    for (let i = 0; i < n * n; i++)               // 1: должна быть закрашена
+      if (sol[Math.floor(i / n)][i % n] === '1' && this.grid[i] !== 1) return i;
+    for (let i = 0; i < n * n; i++)               // 2: закрашена зря
+      if (sol[Math.floor(i / n)][i % n] === '0' && this.grid[i] === 1) return i;
+    return null;
+  }
+
   doHint (fromAd) {
     if (this.won) return;
     if (!fromAd && this.hintsLeft <= 0) { this.offerReward('hint'); return; }
@@ -1605,6 +1617,7 @@ class GameScene extends Phaser.Scene {
     this.flashCell(i, PAL.accent);
     this.popCell(i, shouldBe ? 'fill' : 'cross');
     Snd.hint();
+    if (!shouldBe) toast(this, 'Подсказка: лишняя клетка убрана');
     VK.event('hint_used', { level: this.level.id, via_ad: !!fromAd });
     this.updateActionLabels();
     this.checkAutoWin();
@@ -1774,7 +1787,7 @@ class GameScene extends Phaser.Scene {
 
     cont.add(makeButton(this, {
       x: 0, y: 152, w: 300, h: 58, label: last ? 'К выбору уровней' : 'Следующий уровень',
-      kind: 'primary', fontSize: 16.5,
+      kind: 'primary', fontSize: 16,
       onClick: () => last ? go(this, 'Levels') : this.scene.restart({ level: this.levelIndex + 1 })
     }).cont);
     cont.add(makeButton(this, {
@@ -1855,13 +1868,10 @@ class GameScene extends Phaser.Scene {
     const res = VK.ready ? await VK.showRewarded() : await demoAd(this);
     if (res === 'reward') {
       VK.event('reward_completed', { kind, level: this.level.id });
-      if (kind === 'undo') {
-        this.undoLeft += 3;
-        toast(this, '+3 отмены хода');
-        this.updateActionLabels();
-      } else {
+      if (kind === 'hint') {
+        this.hintsLeft += 1;
         toast(this, '+1 подсказка');
-        this.doHint(true);
+        this.updateActionLabels();      // счётчик оживает: «Подсказка · 1»
       }
     } else {
       VK.event('reward_failed', { kind, reason: res });
