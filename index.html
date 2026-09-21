@@ -1868,10 +1868,14 @@ class GameScene extends Phaser.Scene {
     const res = VK.ready ? await VK.showRewarded() : await demoAd(this);
     if (res === 'reward') {
       VK.event('reward_completed', { kind, level: this.level.id });
-      if (kind === 'hint') {
+      if (kind === 'undo') {
+        this.undoLeft += 3;
+        toast(this, '+3 отмены хода');
+        this.updateActionLabels();
+      } else {
         this.hintsLeft += 1;
         toast(this, '+1 подсказка');
-        this.updateActionLabels();      // счётчик оживает: «Подсказка · 1»
+        this.updateActionLabels();
       }
     } else {
       VK.event('reward_failed', { kind, reason: res });
