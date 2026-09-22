@@ -202,17 +202,22 @@ const Save = {
       if (d && d.version === 1 && Array.isArray(d.completed)) this.data = d;
     } catch (e) {}
   },
-  async load () {
+    async load () {
     if (VK.ready) {
       try {
         const r = await withTimeout(VK.bridge.send('VKWebAppStorageGet', { keys: [SAVE_KEY] }), 3000);
         const rec = r && r.keys && r.keys.find(k => k.key === SAVE_KEY);
+        console.log('[save] VK get →', rec ? rec.value : 'пусто');          // ← ЛОГ №1 сюда
         if (rec && rec.value) { this.parse(rec.value); this.backend = 'vk'; return; }
         this.backend = 'vk'; // хранилище доступно, ключа ещё нет
-      } catch (e) { /* пробуем localStorage */ }
+      } catch (e) {
+        console.log('[save] VK get ошибка:', (e && e.message) || e);        // ← ЛОГ №1б
+        /* пробуем localStorage */
+      }
     }
     try {
       const raw = localStorage.getItem(SAVE_KEY);
+      console.log('[save] localStorage →', raw ? 'есть запись' : 'пусто');  // ← ЛОГ №2 сюда
       if (raw) this.parse(raw);
       this.backend = 'local';
     } catch (e) { this.backend = 'memory'; }
@@ -848,14 +853,12 @@ class BootScene extends Phaser.Scene {
       const sp = document.getElementById('splash');
       if (sp) { sp.classList.add('hide'); setTimeout(() => sp.remove(), 600); }
       if (!Save.data.accepted) {
-        console.log('[save] VK get →', rec ? rec.value : 'пусто')
         let ok = false;
         while (!ok) {
           ok = await consentOverlay(this);
           if (!ok) toast(this, 'Без принятия условий игра недоступна');
         }
         Save.data.accepted = true;
-        console.log('[save] VK get →', rec ? rec.value : 'пусто')
         Save.persist();
       }
       VK.event('game_start');
