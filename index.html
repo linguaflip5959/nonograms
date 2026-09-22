@@ -58,6 +58,7 @@ if (typeof Phaser === 'undefined') {
 
 /* ================= константы и палитра «бумага + чернила» ================= */
 const W = 480;
+const TOP_SAFE = 64;   // отступ под нативный слой ВК (кнопки/хедер webview)
 // высота дизайна — из пропорции экрана (с клампами), чтобы FIT растягивал
 // канвас от края до края, без полос сверху/снизу
 const H = Math.round(Math.min(1120, Math.max(720, W * window.innerHeight / window.innerWidth)));
@@ -258,6 +259,33 @@ const Icons = {
     g.lineStyle(2.3, col, 1); g.beginPath();
     g.moveTo(x + 7, y); g.lineTo(x - 5, y); g.strokePath();
     g.fillStyle(col, 1); g.fillTriangle(x - 5, y - 4.5, x - 5, y + 4.5, x - 11, y);
+  },
+    sound (g, x, y, col, on) {
+    // геометрия lucide volume-2/0, viewBox 24→центр (x,y)
+    g.fillStyle(col, 1);
+    g.beginPath();
+    g.moveTo(x - 1, y - 7.3);      // верхний конус (11, 4.7)
+    g.lineTo(x - 5.6, y - 4);      // верх горла (6.4, 8)
+    g.lineTo(x - 9, y - 4);        // левый верх (3, 8)
+    g.lineTo(x - 9, y + 4);        // левый низ (3, 16)
+    g.lineTo(x - 5.6, y + 4);      // низ горла (6.4, 16)
+    g.lineTo(x - 1, y + 7.3);      // нижний конус (11, 19.3)
+    g.closePath();
+    g.fillPath();
+    if (on) {
+      g.lineStyle(2, col, 1);
+      g.beginPath();
+      g.arc(x + 4, y, 5, Phaser.Math.DegToRad(-90), Phaser.Math.DegToRad(90));
+      g.strokePath();
+      g.beginPath();
+      g.arc(x + 4, y, 9, Phaser.Math.DegToRad(-90), Phaser.Math.DegToRad(90));
+      g.strokePath();
+    } else {
+      g.lineStyle(2.2, col, 1);
+      g.beginPath();
+      g.moveTo(x - 7, y - 7); g.lineTo(x + 7, y + 7);
+      g.strokePath();
+    }
   },
   bulb (g, x, y, col) {
     g.lineStyle(2.2, col, 1); g.strokeCircle(x, y - 1.5, 5.5);
@@ -1102,10 +1130,21 @@ class GameScene extends Phaser.Scene {
     VK.event('level_open', { level: this.level.id });
   }
 
-    /* ---------- HUD ---------- */
+  /* ---------- HUD: бренд вверху, кнопки и уровень — одним этажом ---------- */
   buildHUD () {
+    // строка 1: бренд — на месте нативного слоя ВК (не кликается)
+    const brand = this.add.text(W / 2, 24, 'НОНОГРАММЫ', {
+      fontFamily: FONT, fontSize: '21px', fontStyle: '800', color: HEX(PAL.ink)
+    }).setOrigin(0.5);
+    if (brand.setLetterSpacing) brand.setLetterSpacing(3);
+    this.add.text(W / 2, 42, 'японские кроссворды', {
+      fontFamily: FONT, fontSize: '13px', fontStyle: '400', color: HEX(PAL.ink)
+    }).setOrigin(0.5).setAlpha(0.8);
+
+    // строка 2: кнопки + заголовок уровня — единый этаж
+    const hudY = TOP_SAFE + 40;
     makeButton(this, {
-      x: 50, y: 52, w: 52, h: 52, label: '', kind: 'ghost', icon: Icons.back,
+      x: 50, y: hudY, w: 52, h: 52, label: '', kind: 'ghost', icon: Icons.back,
       onClick: async () => {
         if (this.won) { go(this, 'Levels'); return; }
         const yes = await confirmDialog(this, {
@@ -1115,16 +1154,33 @@ class GameScene extends Phaser.Scene {
         if (yes) { VK.event('level_exit', { level: this.level.id }); go(this, 'Levels'); }
       }
     });
-
-    // «?» — правила под рукой, не выходя из уровня
-    makeButton(this, {
-      x: W - 115, y: 52, w: 52, h: 52, label: '?', kind: 'ghost', fontSize: 20,
-      onClick: () => { rulesOverlay(this); }
+        // звук: вкл/выкл прямо в уровне
+    const sndCont = this.add.container(108, hudY);
+    const sndBg = this.add.graphics();
+    const sndIcon = this.add.graphics();
+    const redrawSnd = () => {
+      drawBtnBg(sndBg, 52, 52, 'ghost', true);
+      sndIcon.clear();
+      Icons.sound(sndIcon, 0, 0, PAL.ink, Snd.on);
+    };
+    const sndHit = this.add.rectangle(0, 0, 52, 52, PAL.ink, 0.001)
+      .setInteractive({ useHandCursor: true });
+    sndHit.on('pointerdown', () => sndCont.setScale(0.96));
+    sndHit.on('pointerout', () => sndCont.setScale(1));
+    sndHit.on('pointerup', () => {
+      sndCont.setScale(1);
+      Snd.button();
+      Snd.unlock();
+      Snd.setOn(!Snd.on);
+      Save.data.sound = Snd.on;
+      Save.persist();
+      redrawSnd();
+      if (Snd.on) Snd.button();      // подтверждение включения — сам слышит
     });
-
-    // очистка поля: бесплатна (выход/вход давал то же), с подтверждением
+    sndCont.add(sndBg); sndCont.add(sndIcon); sndCont.add(sndHit);
+    redrawSnd();
     makeButton(this, {
-      x: W - 50, y: 52, w: 52, h: 52, label: '', kind: 'ghost', icon: Icons.reset,
+      x: W - 50, y: hudY, w: 52, h: 52, label: '', kind: 'ghost', icon: Icons.reset,
       onClick: async () => {
         if (this.won) return;
         if (this.grid.every(v => v === 0)) { toast(this, 'Поле и так пустое'); return; }
@@ -1136,20 +1192,29 @@ class GameScene extends Phaser.Scene {
         if (yes && !this.won) this.clearField();
       }
     });
+    makeButton(this, {
+      x: W - 108, y: hudY, w: 52, h: 52, label: '?', kind: 'ghost', fontSize: 20,
+      onClick: () => { rulesOverlay(this); }
+    });
 
-    const hd = this.add.text(W / 2 + 6, 42,
+    // «УРОВЕНЬ 1» — в центре ряда кнопок, подзаголовок вплотную под ним
+    const hd = this.add.text(W / 2, hudY - 10,
       this.isTutorial ? 'ОБУЧЕНИЕ' : 'УРОВЕНЬ ' + (this.levelIndex + 1), {
       fontFamily: FONT, fontSize: '20px', fontStyle: '800', color: HEX(PAL.ink)
     }).setOrigin(0.5);
     if (hd.setLetterSpacing) hd.setLetterSpacing(1);
-     this.add.text(W / 2 + 6, 68,
-      this.isTutorial ? 'обучение' :
+    this.add.text(W / 2, hudY + 14,
+      this.isTutorial ? 'первые шаги' :
       this.n + '×' + this.n + (this.level.hard ? ' · сложный' : '') + '  ·  №' + (this.levelIndex + 1) + ' из 12', {
-      fontFamily: FONT, fontSize: '12.5px', fontStyle: '400', color: HEX(PAL.soft)
-    }).setOrigin(0.5);
+      fontFamily: FONT, fontSize: '12px', fontStyle: '400', color: HEX(PAL.ink)
+    }).setOrigin(0.5).setAlpha(0.85);
+
+    // разделитель — сразу под этажом
     const ln = this.add.graphics();
     ln.lineStyle(1.2, PAL.faint, 0.8);
-    ln.beginPath(); ln.moveTo(24, 92); ln.lineTo(W - 24, 92); ln.strokePath();
+    ln.beginPath();
+    ln.moveTo(24, hudY + 32); ln.lineTo(W - 24, hudY + 32);
+    ln.strokePath();
   }
 
   /* ---------- поле с подсказками ---------- */
@@ -1160,7 +1225,7 @@ class GameScene extends Phaser.Scene {
 
     /* геометрия: размер цифр зависит от клетки, а ширина чисел — от размера
        цифр, поэтому подбираем всё сходящимися проходами */
-    const topY = 100, bottomY = H - 166;   // зона поля: от шапки до кнопок
+    const topY = TOP_SAFE + 92, bottomY = H - 166;   // зона поля: от шапки до кнопок
     const availH = bottomY - topY;
     const STATUS = 46;                      // статус-строка под полем
     let cell = n === 5 ? 77 : 42;
