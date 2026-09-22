@@ -215,12 +215,13 @@ const Save = {
         /* пробуем localStorage */
       }
     }
-    try {
+        try {
       const raw = localStorage.getItem(SAVE_KEY);
-      console.log('[save] localStorage →', raw ? 'есть запись' : 'пусто');  // ← ЛОГ №2 сюда
       if (raw) this.parse(raw);
-      this.backend = 'local';
-    } catch (e) { this.backend = 'memory'; }
+      // если VK доступен — запись всегда идёт в VK Storage,
+      // localStorage остаётся только чтением-стартом
+      if (this.backend !== 'vk') this.backend = 'local';
+    } catch (e) { if (this.backend !== 'vk') this.backend = 'memory'; }
   },
   async persist () {
     const s = JSON.stringify(this.data);
