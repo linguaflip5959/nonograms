@@ -220,8 +220,11 @@ const Save = {
   async persist () {
     const s = JSON.stringify(this.data);
     if (this.backend === 'vk') {
-      try { await withTimeout(VK.bridge.send('VKWebAppStorageSet', { key: SAVE_KEY, value: s }), 3000); return; }
-      catch (e) { /* на запись в VK не повезло — пишем локально */ }
+      try {
+        const r = await withTimeout(VK.bridge.send('VKWebAppStorageSet', { key: SAVE_KEY, value: s }), 3000);
+        console.log('[save] VK storage set →', JSON.stringify(r), 'данные:', s);
+        return;
+      } catch (e) { console.log('[save] VK set ошибка:', (e && e.message) || e); }
     }
     try { localStorage.setItem(SAVE_KEY, s); } catch (e) {}
   },
@@ -845,12 +848,14 @@ class BootScene extends Phaser.Scene {
       const sp = document.getElementById('splash');
       if (sp) { sp.classList.add('hide'); setTimeout(() => sp.remove(), 600); }
       if (!Save.data.accepted) {
+        console.log('[save] VK get →', rec ? rec.value : 'пусто')
         let ok = false;
         while (!ok) {
           ok = await consentOverlay(this);
           if (!ok) toast(this, 'Без принятия условий игра недоступна');
         }
         Save.data.accepted = true;
+        console.log('[save] VK get →', rec ? rec.value : 'пусто')
         Save.persist();
       }
       VK.event('game_start');
