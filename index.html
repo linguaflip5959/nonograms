@@ -173,10 +173,8 @@ const VK = {
     if (!this.ready) return 'demo'; // вне ВК — вызывающий покажет демо-оверлей
     try {
       const r = await withTimeout(this.bridge.send('VKWebAppShowNativeAds', { ad_format: 'reward' }), 150000);
-      console.log('[ads] ответ:', JSON.stringify(r));   // лог для повторной проверки
       return (r && r.result === false) ? 'closed' : 'reward';
     } catch (e) {
-      console.log('[ads] ошибка:', (e && e.message) || e);
       return 'error';
     }
   },
@@ -204,16 +202,10 @@ const Save = {
   },
     async load () {
     if (VK.ready) {
-      try {
         const r = await withTimeout(VK.bridge.send('VKWebAppStorageGet', { keys: [SAVE_KEY] }), 3000);
         const rec = r && r.keys && r.keys.find(k => k.key === SAVE_KEY);
-        console.log('[save] VK get →', rec ? rec.value : 'пусто');          // ← ЛОГ №1 сюда
         if (rec && rec.value) { this.parse(rec.value); this.backend = 'vk'; return; }
         this.backend = 'vk'; // хранилище доступно, ключа ещё нет
-      } catch (e) {
-        console.log('[save] VK get ошибка:', (e && e.message) || e);        // ← ЛОГ №1б
-        /* пробуем localStorage */
-      }
     }
         try {
       const raw = localStorage.getItem(SAVE_KEY);
@@ -226,11 +218,8 @@ const Save = {
   async persist () {
     const s = JSON.stringify(this.data);
     if (this.backend === 'vk') {
-      try {
         const r = await withTimeout(VK.bridge.send('VKWebAppStorageSet', { key: SAVE_KEY, value: s }), 3000);
-        console.log('[save] VK storage set →', JSON.stringify(r), 'данные:', s);
         return;
-      } catch (e) { console.log('[save] VK set ошибка:', (e && e.message) || e); }
     }
     try { localStorage.setItem(SAVE_KEY, s); } catch (e) {}
   },
@@ -269,30 +258,31 @@ const Icons = {
     g.moveTo(x + 7, y); g.lineTo(x - 5, y); g.strokePath();
     g.fillStyle(col, 1); g.fillTriangle(x - 5, y - 4.5, x - 5, y + 4.5, x - 11, y);
   },
-    sound (g, x, y, col, on) {
-    // геометрия lucide volume-2/0, viewBox 24→центр (x,y)
+  sound (g, x, y, col, on) {
+    // lucide volume-2/0; динамик и волны сдвинуты на +3 вправо
+    // (крест мьюта из прошлой правки центрирует композицию)
     g.fillStyle(col, 1);
     g.beginPath();
-    g.moveTo(x - 1, y - 7.3);      // верхний конус (11, 4.7)
-    g.lineTo(x - 5.6, y - 4);      // верх горла (6.4, 8)
-    g.lineTo(x - 9, y - 4);        // левый верх (3, 8)
-    g.lineTo(x - 9, y + 4);        // левый низ (3, 16)
-    g.lineTo(x - 5.6, y + 4);      // низ горла (6.4, 16)
-    g.lineTo(x - 1, y + 7.3);      // нижний конус (11, 19.3)
+    g.moveTo(x + 2, y - 7.3);      // верхний конус
+    g.lineTo(x - 2.6, y - 4);      // верх горла
+    g.lineTo(x - 6, y - 4);        // левый верх
+    g.lineTo(x - 6, y + 4);        // левый низ
+    g.lineTo(x - 2.6, y + 4);      // низ горла
+    g.lineTo(x + 2, y + 7.3);      // нижний конус
     g.closePath();
     g.fillPath();
     if (on) {
       g.lineStyle(2, col, 1);
       g.beginPath();
-      g.arc(x + 4, y, 5, Phaser.Math.DegToRad(-90), Phaser.Math.DegToRad(90));
+      g.arc(x + 7, y, 5, Phaser.Math.DegToRad(-90), Phaser.Math.DegToRad(90));
       g.strokePath();
       g.beginPath();
-      g.arc(x + 4, y, 9, Phaser.Math.DegToRad(-90), Phaser.Math.DegToRad(90));
+      g.arc(x + 7, y, 9, Phaser.Math.DegToRad(-90), Phaser.Math.DegToRad(90));
       g.strokePath();
     } else {
       g.lineStyle(2.2, col, 1);
       g.beginPath();
-      g.moveTo(x - 7, y - 7); g.lineTo(x + 7, y + 7);
+      g.moveTo(x - 9, y - 10); g.lineTo(x + 9, y + 9);   // твой крест, без изменений
       g.strokePath();
     }
   },
@@ -357,7 +347,8 @@ function drawBtnBg (g, w, h, kind, enabled) {
   }
 }
 
-// Универсальная кнопка: иконка + подпись, нажатие лёгким сжатием
+// Универсальная кнопка: иконка + подпись, нажатие лёгким сжатием.
+// up без своего down (кнопка родилась под прижатым пальцем) — игнорируется
 function makeButton (scene, o) {
   const cont = scene.add.container(o.x, o.y).setDepth(o.depth || 20);
   const bg = scene.add.graphics();
@@ -378,10 +369,13 @@ function makeButton (scene, o) {
     .setInteractive({ useHandCursor: true });
   cont.add(hit);
   let enabled = true;
-  hit.on('pointerdown', () => cont.setScale(0.97));
-  hit.on('pointerout', () => cont.setScale(1));
+  let pressed = false;                 // нажатие началось на ЭТОЙ кнопке
+  hit.on('pointerdown', () => { pressed = true; cont.setScale(0.97); });
+  hit.on('pointerout', () => { pressed = false; cont.setScale(1); });
   hit.on('pointerup', () => {
     cont.setScale(1);
+    if (!pressed) return;              // призрачный up — мимо
+    pressed = false;
     if (enabled && o.onClick) { Snd.button(); o.onClick(); }
   });
   return {
@@ -413,34 +407,37 @@ function toast (scene, msg) {
 }
 
 // Диалог подтверждения, возвращает Promise<boolean>
+// Диалог подтверждения, возвращает Promise<boolean>
+// Старт отложен на кадр: призрачный pointerup от кнопки-источника
+// не долетает до кнопок диалога и не «нажимает» их сам
 function confirmDialog (scene, o) {
   return new Promise(resolve => {
-    const dim = scene.add.rectangle(0, 0, W, H, 0x272119, 0.45).setOrigin(0).setDepth(3900)
-      .setInteractive({ useHandCursor: false });
-    const cont = scene.add.container(W / 2, H / 2 - 20).setDepth(4000).setScale(0.92).setAlpha(0);
-    const bg = scene.add.graphics();
-    bg.fillStyle(PAL.panel, 1); bg.fillRoundedRect(-172, -105, 344, 210, 14);
-    bg.lineStyle(1.6, PAL.faint, 1); bg.strokeRoundedRect(-172, -105, 344, 210, 14);
-    cont.add(bg);
-    cont.add(scene.add.text(0, -70, o.title, {
-      fontFamily: FONT, fontSize: '19px', fontStyle: '800', color: HEX(PAL.ink)
-    }).setOrigin(0.5));
-    cont.add(scene.add.text(0, -28, o.text, {
-      fontFamily: FONT, fontSize: '14.5px', fontStyle: '400', color: HEX(PAL.soft),
-      wordWrap: { width: 290 }, align: 'center'
-    }).setOrigin(0.5));
-    const done = v => {
-      dim.destroy(); cont.destroy(); resolve(v);
-    };
-    cont.add(makeButton(scene, {
-      x: -84, y: 62, w: 148, h: 50, label: o.no || 'Отмена', kind: 'ghost', fontSize: 15,
-      onClick: () => done(false)
-    }).cont);
-    cont.add(makeButton(scene, {
-      x: 84, y: 62, w: 148, h: 50, label: o.yes || 'Да', kind: o.accentYes ? 'accent' : 'primary',
-      fontSize: 15, onClick: () => done(true)
-    }).cont);
-    scene.tweens.add({ targets: cont, scale: 1, alpha: 1, duration: 160, ease: 'Cubic.easeOut' });
+    scene.time.delayedCall(0, () => {
+      const dim = scene.add.rectangle(0, 0, W, H, 0x272119, 0.45).setOrigin(0).setDepth(3900)
+        .setInteractive({ useHandCursor: false });
+      const cont = scene.add.container(W / 2, H / 2 - 20).setDepth(4000).setScale(0.92).setAlpha(0);
+      const bg = scene.add.graphics();
+      bg.fillStyle(PAL.panel, 1); bg.fillRoundedRect(-172, -105, 344, 210, 14);
+      bg.lineStyle(1.6, PAL.faint, 1); bg.strokeRoundedRect(-172, -105, 344, 210, 14);
+      cont.add(bg);
+      cont.add(scene.add.text(0, -70, o.title, {
+        fontFamily: FONT, fontSize: '19px', fontStyle: '800', color: HEX(PAL.ink)
+      }).setOrigin(0.5));
+      cont.add(scene.add.text(0, -28, o.text, {
+        fontFamily: FONT, fontSize: '14.5px', fontStyle: '400', color: HEX(PAL.soft),
+        wordWrap: { width: 290 }, align: 'center'
+      }).setOrigin(0.5));
+      const done = v => { dim.destroy(); cont.destroy(); resolve(v); };
+      cont.add(makeButton(scene, {
+        x: -84, y: 62, w: 148, h: 50, label: o.no || 'Отмена', kind: 'ghost', fontSize: 15,
+        onClick: () => done(false)
+      }).cont);
+      cont.add(makeButton(scene, {
+        x: 84, y: 62, w: 148, h: 50, label: o.yes || 'Да', kind: o.accentYes ? 'accent' : 'primary',
+        fontSize: 15, onClick: () => done(true)
+      }).cont);
+      scene.tweens.add({ targets: cont, scale: 1, alpha: 1, duration: 160, ease: 'Cubic.easeOut' });
+    });
   });
 }
 
@@ -1174,9 +1171,13 @@ class GameScene extends Phaser.Scene {
     };
     const sndHit = this.add.rectangle(0, 0, 52, 52, PAL.ink, 0.001)
       .setInteractive({ useHandCursor: true });
-    sndHit.on('pointerdown', () => sndCont.setScale(0.96));
+    let sndPressed = false;
+    sndHit.on('pointerdown', () => {sndPressed = true; sndCont.setScale(0.96)});
     sndHit.on('pointerout', () => sndCont.setScale(1));
     sndHit.on('pointerup', () => {
+      if (!sndPressed) return; sndPressed = false;
+      sndPressed = true;
+      if (!sndPressed) return; sndPressed = false;
       sndCont.setScale(1);
       Snd.button();
       Snd.unlock();
@@ -1370,9 +1371,15 @@ class GameScene extends Phaser.Scene {
       }).setOrigin(0.5, 0.5);
       const hit = this.add.rectangle(0, 0, MW, 58, PAL.ink, 0.001)
         .setInteractive({ useHandCursor: true });
-      hit.on('pointerdown', () => cont.setScale(0.96));
-      hit.on('pointerout', () => cont.setScale(1));
-      hit.on('pointerup', () => { cont.setScale(1); Snd.button(); this.setMode(m.key); });
+      let pressed = false;
+      hit.on('pointerdown', () => { pressed = true; cont.setScale(0.96); });
+      hit.on('pointerout', () => { pressed = false; cont.setScale(1); });
+      hit.on('pointerup', () => {
+        cont.setScale(1);
+        if (!pressed) return;
+        pressed = false;
+        Snd.button(); this.setMode(m.key);
+      });
       cont.add(bg); cont.add(icon); cont.add(label); cont.add(hit);
       this.modeBtns[m.key] = { bg, icon, label, cont, iconFn: m.icon, w: MW };
     });
@@ -1930,6 +1937,7 @@ class GameScene extends Phaser.Scene {
   /* ---------- реклама за бустеры ---------- */
   async offerReward (kind) {
     if (this.won) return;
+    await new Promise(r => this.time.delayedCall(0, r));
     const yes = await confirmDialog(this, {
       title: kind === 'undo' ? 'Закончились отмены' : 'Закончились подсказки',
       text: kind === 'undo'
