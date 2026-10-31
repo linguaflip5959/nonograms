@@ -1,0 +1,11 @@
+skills/
+node_modules/
+
+# ==== не пушить на GitHub ====
+.env
+.readme
+README.md
+Japanese puzzles.txt
+nonog.txt
+Nonogrammas.zip
+nonograms_ready.zip

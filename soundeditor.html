@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snd — редактор звуков</title>
+<style>
+:root{
+  --paper:#F3ECDC; --paper2:#EFE6D1; --card:#F8F3E7;
+  --ink:#2B251C; --ink60:rgba(43,37,28,.6); --ink35:rgba(43,37,28,.35); --ink18:rgba(43,37,28,.18);
+  --accent:#B9452C; --accent-soft:#E2907A;
+  --mono:Consolas,Menlo,"SF Mono","Liberation Mono","Courier New",monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:var(--paper); color:var(--ink);
+  font-family:Georgia,"Times New Roman",serif; font-size:15px; line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+}
+/* лёгкое бумажное зерно, инлайновый SVG — без внешних ресурсов */
+body::before{
+  content:""; position:fixed; inset:0; z-index:99; pointer-events:none;
+  background-image:url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.17 0 0 0 0 0.145 0 0 0 0 0.11 0 0 0 0.06 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.mono{font-family:var(--mono)}
+
+/* ── шапка ── */
+.head{max-width:1100px;margin:0 auto;padding:24px 18px 14px}
+h1{margin:0;font-size:27px;font-weight:400;letter-spacing:.01em}
+h1 .diamond{display:inline-block;width:10px;height:10px;background:var(--accent);transform:rotate(45deg);margin:0 12px 4px 2px}
+.sub{margin:4px 0 0;font-size:13px;color:var(--ink60)}
+
+.wrap{max-width:1100px;margin:0 auto;padding:0 18px 30px}
+.frame{border:2px solid var(--ink);background:#F7F1E4}
+
+/* ── осциллограф ── */
+.scope-wrap{position:relative;height:54px;background:var(--paper2);border-bottom:1.5px solid rgba(43,37,28,.5)}
+.scope-wrap canvas{display:block;width:100%;height:100%}
+.scope-label{position:absolute;left:10px;top:5px;font-family:var(--mono);font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink60)}
+
+/* ── колонки ── */
+.cols{display:grid;grid-template-columns:218px 1fr}
+.slots{background:var(--paper2);border-right:1.5px solid rgba(43,37,28,.5);padding:14px 12px}
+.col-title{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink60);border-bottom:1px solid var(--ink18);padding-bottom:7px;margin-bottom:10px}
+#slotList{display:flex;flex-direction:column;gap:5px}
+
+/* слот-кнопка */
+.slot{position:relative;text-align:left;padding:8px 24px 8px 13px;border:1.5px solid rgba(43,37,28,.45);background:transparent;cursor:pointer;font:inherit;display:flex;flex-direction:column;gap:1px}
+.slot .k{font-family:var(--mono);font-size:14px}
+.slot .d{font-size:11.5px;color:var(--ink60)}
+.slot:hover{border-color:var(--ink);background:rgba(43,37,28,.05)}
+.slot.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.slot.on .d{color:rgba(243,236,220,.65)}
+.slot.on::before{content:"";position:absolute;left:3px;top:11px;width:6px;height:6px;background:var(--accent);transform:rotate(45deg)}
+.slot .pulse{position:absolute;right:8px;top:9px;width:8px;height:8px;background:var(--accent);opacity:0}
+.slot.playing .pulse{opacity:1;animation:pulse .32s infinite alternate}
+@keyframes pulse{from{transform:scale(.5)}to{transform:scale(1.25)}}
+
+/* ── рабочая зона ── */
+.work{padding:16px 18px 18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.work-head{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+#slotName{font-family:var(--mono);font-size:21px;margin:0;letter-spacing:.02em}
+.slot-desc{margin:2px 0 0;font-size:13px;color:var(--ink60)}
+.slot-info{margin:4px 0 0;font-family:var(--mono);font-size:11px;color:var(--ink60)}
+.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
+/* кнопки */
+.btn{font:inherit;font-size:14px;padding:9px 15px;background:transparent;border:1.5px solid var(--ink);color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:background .15s,color .15s}
+.btn:not(:disabled):hover{background:var(--ink);color:var(--paper)}
+.btn:not(:disabled):active{transform:translate(1px,1px)}
+.btn:disabled{opacity:.4;cursor:default}
+.btn-accent{border-color:var(--accent);color:var(--accent)}
+.btn-accent:not(:disabled):hover{background:var(--accent);color:var(--paper)}
+.btn-small{padding:7px 13px;font-size:13px}
+.btn-play{font:inherit;font-size:17px;padding:13px 26px;background:var(--accent);color:var(--paper);border:2px solid var(--ink);box-shadow:4px 4px 0 var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:10px}
+.btn-play:hover{transform:translate(-1px,-1px);box-shadow:5px 5px 0 var(--ink)}
+.btn-play:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--ink)}
+
+/* блоки */
+.block{background:var(--card);border:1px solid rgba(43,37,28,.28);padding:12px 14px}
+.block-title{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink60);border-bottom:1px solid var(--ink18);padding-bottom:7px;margin-bottom:10px}
+.block-title>span{text-transform:none;letter-spacing:.02em;font-size:11px}
+
+/* список слоёв */
+.layer{display:flex;align-items:center;gap:10px;padding:7px 8px;border:1.5px solid transparent;cursor:pointer}
+.layer:hover{background:rgba(43,37,28,.05)}
+.layer.on{border-color:var(--ink);background:rgba(43,37,28,.06)}
+.layer .idx{font-family:var(--mono);font-size:11px;color:var(--ink60);width:18px;flex:none}
+.layer .tag{font-family:var(--mono);font-size:10.5px;padding:2px 8px;border:1px solid var(--ink);flex:none}
+.layer .tag-noise{background:var(--ink);color:var(--paper)}
+.layer .sum{font-family:var(--mono);font-size:12px;color:var(--ink60);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.layer .del{width:23px;height:23px;flex:none;display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid transparent;color:var(--ink60);cursor:pointer;padding:0}
+.layer .del:hover{color:var(--accent);border-color:var(--accent)}
+
+.add-row{display:flex;align-items:center;gap:9px;margin-top:11px;flex-wrap:wrap}
+.add-hint{font-size:12px;font-style:italic;color:var(--ink60)}
+.seg{display:inline-flex;border:1.5px solid var(--ink);background:var(--card)}
+.seg button{font-family:var(--mono);font-size:11.5px;padding:5px 12px;background:transparent;border:0;cursor:pointer;color:var(--ink)}
+.seg button:hover{background:rgba(43,37,28,.08)}
+.seg button.on{background:var(--ink);color:var(--paper)}
+
+/* параметры */
+.param{display:grid;grid-template-columns:128px 1fr 74px;gap:12px;align-items:center;padding:5px 0}
+.param>label{font-size:13.5px;font-style:italic}
+.param .val{font-family:var(--mono);font-size:12px;text-align:right}
+.param select{grid-column:2;justify-self:start;width:158px;font-family:var(--mono);font-size:13px;padding:6px 30px 6px 10px;border:1.5px solid var(--ink);color:var(--ink);background:var(--paper) url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%232B251C' stroke-width='1.5' fill='none'/%3E%3C/svg%3E") no-repeat right 9px center;appearance:none;-webkit-appearance:none;cursor:pointer}
+.chk{display:flex;align-items:center;gap:7px;font-size:13.5px;font-style:italic;cursor:pointer}
+.chk input{accent-color:var(--accent);width:14px;height:14px;margin:0;cursor:pointer}
+.param-drop{border-top:1px dashed var(--ink18);margin-top:5px;padding-top:9px}
+
+/* слайдеры */
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:22px;background:transparent;cursor:pointer;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:2px;background:var(--ink35)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:13px;height:13px;margin-top:-5.5px;background:var(--paper);border:2px solid var(--ink);border-radius:2px}
+input[type=range]:hover::-webkit-slider-thumb,input[type=range]:active::-webkit-slider-thumb{background:var(--accent);border-color:var(--accent)}
+input[type=range]::-moz-range-track{height:2px;background:var(--ink35)}
+input[type=range]::-moz-range-thumb{width:10px;height:10px;background:var(--paper);border:2px solid var(--ink);border-radius:2px}
+input[type=range]:hover::-moz-range-thumb,input[type=range]:active::-moz-range-thumb{background:var(--accent);border-color:var(--accent)}
+input[type=range]:disabled{opacity:.35;cursor:default}
+
+/* экспорт */
+#exportCode{background:var(--ink);color:#F0E7D2;font-family:var(--mono);font-size:12px;line-height:1.65;padding:11px 13px;margin:0 0 12px;white-space:pre-wrap;word-break:break-word;min-height:41px}
+#exportCode .m{color:var(--accent-soft)}
+.export-actions{display:flex;gap:10px;flex-wrap:wrap}
+
+.foot{max-width:660px;margin:14px auto 0;text-align:center;font-size:12px;color:var(--ink60)}
+
+/* тост */
+.toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,12px);background:var(--ink);color:var(--paper);padding:10px 18px;font-size:13.5px;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:120;box-shadow:4px 4px 0 rgba(43,37,28,.25);max-width:88vw}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* модалка фолбэка */
+.modal{position:fixed;inset:0;background:rgba(43,37,28,.45);display:flex;align-items:center;justify-content:center;padding:20px;z-index:110}
+.modal[hidden]{display:none}
+.modal-card{background:var(--paper);border:2px solid var(--ink);box-shadow:6px 6px 0 rgba(43,37,28,.35);max-width:640px;width:100%;padding:20px}
+.modal-card h3{margin:0 0 8px;font-size:19px;font-weight:400}
+.modal-card p{margin:0 0 12px;font-size:13.5px;color:var(--ink60)}
+.modal-card textarea{width:100%;height:210px;font-family:var(--mono);font-size:12.5px;line-height:1.6;border:1.5px solid var(--ink);background:#FBF6EA;color:var(--ink);padding:10px;resize:vertical}
+.modal-actions{display:flex;gap:10px;margin-top:14px;justify-content:flex-end}
+
+@media (max-width:780px){
+  .cols{grid-template-columns:1fr}
+  .slots{border-right:0;border-bottom:1.5px solid rgba(43,37,28,.5)}
+  #slotList{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .work{padding:14px}
+  h1{font-size:22px}
+}
+</style>
+</head>
+<body>
+
+<header class="head">
+  <h1><span class="diamond"></span>Редактор звуков</h1>
+  <p class="sub">мини-инструмент к игре · WebAudio-синтез, без ассетов · словарь Snd</p>
+</header>
+
+<div class="wrap">
+  <div class="frame">
+    <div class="scope-wrap">
+      <canvas id="scope"></canvas>
+      <span class="scope-label">осциллограф · мастер</span>
+    </div>
+    <div class="cols">
+      <nav class="slots">
+        <div class="col-title">Слоты</div>
+        <div id="slotList"></div>
+      </nav>
+      <section class="work">
+        <div class="work-head">
+          <div>
+            <h2 id="slotName">fill</h2>
+            <p class="slot-desc" id="slotDesc"></p>
+            <p class="slot-info" id="slotInfo"></p>
+          </div>
+          <div class="actions">
+            <button class="btn-play" id="btnPlay" type="button"></button>
+            <button class="btn" id="btnRandom" type="button" title="Случайные параметры выбранного слоя"></button>
+          </div>
+        </div>
+
+        <div class="block">
+          <div class="block-title">Слои <span class="mono" id="layerCount"></span></div>
+          <div id="layerList"></div>
+          <div class="add-row">
+            <span class="add-hint">новый слой:</span>
+            <div class="seg" id="segKind">
+              <button type="button" data-k="tone" class="on">tone</button>
+              <button type="button" data-k="noise">noise</button>
+            </div>
+            <button class="btn btn-small" id="btnAdd" type="button"></button>
+          </div>
+        </div>
+
+        <div class="block">
+          <div class="block-title">Параметры слоя <span class="mono" id="paramHead"></span></div>
+          <div id="paramList"></div>
+        </div>
+
+        <div class="block">
+          <div class="block-title">Экспорт <span>вставить вместо одноимённого метода в Snd</span></div>
+          <pre id="exportCode"></pre>
+          <div class="export-actions">
+            <button class="btn btn-accent" id="btnCopyOne" type="button"></button>
+            <button class="btn" id="btnCopyAll" type="button"></button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <p class="foot">Методы генерируются в формате словаря Snd: параметры подставлены актуальные, порядок слоёв сохранён. Пробел — прослушать выбранный слот.</p>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-card">
+    <h3>Буфер обмена недоступен</h3>
+    <p id="modalHint"></p>
+    <textarea id="modalText" readonly spellcheck="false"></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-accent" id="modalSelect" type="button">Выделить код</button>
+      <button class="btn" id="modalClose" type="button">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ─────────── данные: восемь слотов и стартовые значения под игру ─────────── */
+
+const SLOT_META = [
+  ['fill',  'закрашивание клетки'],
+  ['cross', 'крестик'],
+  ['erase', 'ластик'],
+  ['button','кнопка UI'],
+  ['undo',  'отмена'],
+  ['hint',  'подсказка'],
+  ['wrong', 'неверное решение'],
+  ['stamp', 'печать на экране победы'],
+];
+
+const PRESETS = {
+  fill:  [ {kind:'tone',  freq:180, dur:0.09, vol:0.22, type:'triangle', dropOn:true, drop:0.6},
+           {kind:'noise', dur:0.05, vol:0.12, cutoff:1600} ],
+  cross: [ {kind:'noise', dur:0.06, vol:0.12, cutoff:2000} ],
+  erase: [ {kind:'noise', dur:0.09, vol:0.12, cutoff:700} ],
+  button:[ {kind:'tone',  freq:240, dur:0.06, vol:0.15, type:'triangle', dropOn:true, drop:0.6} ],
+  undo:  [ {kind:'tone',  freq:140, dur:0.12, vol:0.18, type:'sine', dropOn:true, drop:0.6} ],
+  hint:  [ {kind:'tone',  freq:520, dur:0.07, vol:0.10, type:'sine', dropOn:true, drop:0.6},
+           {kind:'tone',  freq:780, dur:0.09, vol:0.08, type:'sine', dropOn:true, drop:0.6} ],
+  wrong: [ {kind:'tone',  freq:95,  dur:0.14, vol:0.14, type:'sine', dropOn:true, drop:0.6} ],
+  stamp: [ {kind:'tone',  freq:120, dur:0.22, vol:0.25, type:'sine', dropOn:true, drop:0.6},
+           {kind:'noise', dur:0.08, vol:0.15, cutoff:500} ],
+};
+
+const state = {
+  slots: JSON.parse(JSON.stringify(PRESETS)),
+  currentSlot: 'fill',
+  currentLayer: 0,
+  addKind: 'tone',
+};
+
+/* ─────────── утилиты DOM ─────────── */
+
+const $ = id => document.getElementById(id);
+function el(tag, cls, text){
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+const ICONS = {
+  play:'<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M3.5 2.2v11.6L14 8z" fill="currentColor"/></svg>',
+  spark:'<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M8 1l1.7 4.6L14 7.3l-4.3 1.7L8 13.5 6.3 9 2 7.3l4.3-1.7z" fill="currentColor"/></svg>',
+  copy:'<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><rect x="5.5" y="5.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 3.5h-8v8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>',
+  doc:'<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><rect x="2.5" y="1.5" width="11" height="13" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" stroke-width="1.4"/></svg>',
+  plus:'<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.8"/></svg>',
+  x:'<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.8"/></svg>',
+};
+
+/* ─────────── аудио: контекст создаётся при первом воспроизведении ─────────── */
+
+let actx = null, master = null, analyser = null;
+
+function ensureAudio(){
+  if (!actx){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    actx = new AC();
+    master = actx.createGain();       // прозрачный мастер: тон анализатора звук не меняет
+    analyser = actx.createAnalyser();
+    analyser.fftSize = 2048;
+    master.connect(analyser);
+    analyser.connect(actx.destination);
+  }
+  if (actx.state === 'suspended') actx.resume();
+}
+
+/* tone: осциллятор, частота экспоненциально падает до max(40, freq*drop) к t+dur;
+   громкость: линейная атака 8 мс до vol, затем экспоненциальный спад к 0.0001 */
+function playTone(p){
+  const t = actx.currentTime;
+  const osc = actx.createOscillator();
+  osc.type = p.type;
+  osc.frequency.setValueAtTime(Math.max(40, p.freq), t);
+  osc.frequency.exponentialRampToValueAtTime(
+    Math.max(40, p.freq * (p.dropOn ? p.drop : 1)), t + p.dur);
+
+  const g = actx.createGain();
+  const atk = Math.min(0.008, p.dur * 0.9);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(Math.max(p.vol, 0.0002), t + atk);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + p.dur);
+
+  osc.connect(g); g.connect(master);
+  osc.start(t); osc.stop(t + p.dur + 0.05);
+}
+
+/* noise: белый шум через lowpass, амплитуда линейно затухает к нулю */
+function playNoise(p){
+  const t = actx.currentTime;
+  const n = Math.max(1, Math.floor(actx.sampleRate * p.dur));
+  const buf = actx.createBuffer(1, n, actx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+
+  const src = actx.createBufferSource(); src.buffer = buf;
+  const f = actx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = p.cutoff;
+  const g = actx.createGain();
+  g.gain.setValueAtTime(p.vol, t);
+  g.gain.linearRampToValueAtTime(0, t + p.dur);
+
+  src.connect(f); f.connect(g); g.connect(master);
+  src.start(t);
+}
+
+let pulseTO = 0;
+
+function playSlot(){
+  ensureAudio();
+  const layers = state.slots[state.currentSlot];
+  let maxDur = 0.2;
+  for (const L of layers){
+    (L.kind === 'tone' ? playTone : playNoise)(L);
+    maxDur = Math.max(maxDur, L.dur);
+  }
+  startScope((maxDur + 0.35) * 1000);
+  // индикатор звучания на кнопке слота
+  document.querySelectorAll('.slot').forEach(b => b.classList.remove('playing'));
+  const cur = document.querySelector('.slot[data-slot="' + state.currentSlot + '"]');
+  if (cur){
+    cur.classList.add('playing');
+    clearTimeout(pulseTO);
+    pulseTO = setTimeout(() => cur.classList.remove('playing'), (maxDur + 0.12) * 1000);
+  }
+}
+
+/* ─────────── осциллограф ─────────── */
+
+const scope = $('scope'), sctx = scope.getContext('2d');
+let scopeRAF = 0, scopeUntil = 0;
+const scopeBuf = new Float32Array(2048);
+const scopeU8 = new Uint8Array(2048);
+
+function fitScope(){
+  const dpr = window.devicePixelRatio || 1;
+  const w = scope.clientWidth || 1, h = scope.clientHeight || 1;
+  const W = Math.max(1, Math.round(w * dpr)), H = Math.max(1, Math.round(h * dpr));
+  if (scope.width !== W || scope.height !== H){ scope.width = W; scope.height = H; }
+  return { w, h, dpr };
+}
+
+function readScope(){
+  if (analyser.getFloatTimeDomainData){
+    analyser.getFloatTimeDomainData(scopeBuf);
+  } else {
+    analyser.getByteTimeDomainData(scopeU8);
+    for (let i = 0; i < scopeU8.length; i++) scopeBuf[i] = (scopeU8[i] - 128) / 128;
+  }
+}
+
+function drawFlat(){
+  const { w, h, dpr } = fitScope();
+  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  sctx.clearRect(0, 0, w, h);
+  sctx.strokeStyle = 'rgba(43,37,28,.35)';
+  sctx.lineWidth = 1;
+  sctx.beginPath(); sctx.moveTo(0, h / 2 + .5); sctx.lineTo(w, h / 2 + .5); sctx.stroke();
+}
+
+function drawScope(){
+  if (!analyser){ drawFlat(); scopeRAF = 0; return; }
+  const { w, h, dpr } = fitScope();
+  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  readScope();
+  let peak = 0;
+  for (let i = 0; i < scopeBuf.length; i++){
+    const a = Math.abs(scopeBuf[i]); if (a > peak) peak = a;
+  }
+  const amp = peak > 0.004 ? (h * 0.44) / peak : 1;
+  sctx.clearRect(0, 0, w, h);
+  sctx.strokeStyle = 'rgba(43,37,28,.16)'; sctx.lineWidth = 1;
+  sctx.beginPath(); sctx.moveTo(0, h / 2); sctx.lineTo(w, h / 2); sctx.stroke();
+  sctx.strokeStyle = '#B9452C'; sctx.lineWidth = 1.5; sctx.lineJoin = 'round';
+  sctx.beginPath();
+  const n = scopeBuf.length;
+  for (let i = 0; i < n; i++){
+    const x = i / (n - 1) * w, y = h / 2 - scopeBuf[i] * amp;
+    i ? sctx.lineTo(x, y) : sctx.moveTo(x, y);
+  }
+  sctx.stroke();
+  if (performance.now() < scopeUntil) scopeRAF = requestAnimationFrame(drawScope);
+  else { drawFlat(); scopeRAF = 0; }
+}
+
+function startScope(ms){
+  scopeUntil = performance.now() + ms;
+  if (!scopeRAF) scopeRAF = requestAnimationFrame(drawScope);
+}
+
+/* ─────────── генерация кода ─────────── */
+
+const fmtNum = n => String(Number(n.toFixed(3)));
+
+function layerCall(L){
+  if (L.kind === 'tone'){
+    const drop = L.dropOn ? L.drop : 1;          // выключенный спад = drop 1
+    let s = 'this.tone(' + Math.round(L.freq) + ', ' + fmtNum(L.dur) + ', '
+          + fmtNum(L.vol) + ", '" + L.type + "'";
+    if (Math.abs(drop - 0.6) > 1e-9) s += ', ' + fmtNum(drop); // 0.6 — значение по умолчанию
+    return s + ');';
+  }
+  return 'this.noise(' + fmtNum(L.dur) + ', ' + fmtNum(L.vol) + ', ' + Math.round(L.cutoff) + ');';
+}
+
+function slotCode(name){
+  return name + ' () { ' + state.slots[name].map(layerCall).join(' ') + ' },';
+}
+
+function dictCode(){
+  return 'const Snd = {\n' + SLOT_META.map(([k]) => '  ' + slotCode(k)).join('\n') + '\n};';
+}
+
+/* ─────────── буфер обмена + фолбэк ─────────── */
+
+async function copyText(text, okMsg, fallbackWhat){
+  let ok = false;
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    try { await navigator.clipboard.writeText(text); ok = true; } catch (e) { ok = false; }
+  }
+  if (ok){ showToast(okMsg); }
+  else { openModal(text, fallbackWhat); }
+}
+
+function showToast(msg){
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(showToast._to);
+  showToast._to = setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+function openModal(text, what){
+  $('modalText').value = text;
+  $('modalHint').textContent = 'Копирование в буфер недоступно (вероятно, файл открыт как file://). ' +
+    'Выделите код и скопируйте вручную (Ctrl+C), затем вставьте в игру вместо ' + what + '.';
+  $('modal').hidden = false;
+  setTimeout(() => { $('modalText').focus(); $('modalText').select(); }, 30);
+}
+function closeModal(){ $('modal').hidden = true; }
+
+/* ─────────── рендер ─────────── */
+
+function cur(){ return state.slots[state.currentSlot][state.currentLayer]; }
+
+function renderSlots(){
+  const box = $('slotList'); box.innerHTML = '';
+  SLOT_META.forEach(([k, d]) => {
+    const b = el('button', 'slot' + (k === state.currentSlot ? ' on' : ''));
+    b.type = 'button'; b.dataset.slot = k;
+    b.appendChild(el('span', 'k', k));
+    b.appendChild(el('span', 'd', d));
+    b.appendChild(el('span', 'pulse'));
+    b.addEventListener('click', () => {
+      if (state.currentSlot === k) return;
+      state.currentSlot = k; state.currentLayer = 0;
+      renderSlots(); renderWorkspace();
+    });
+    box.appendChild(b);
+  });
+}
+
+function layerSummary(L){
+  if (L.kind === 'tone')
+    return Math.round(L.freq) + ' Гц · ' + L.dur.toFixed(2) + ' с · ' + L.vol.toFixed(2) + ' · ' + L.type;
+  return Math.round(L.cutoff) + ' Гц · ' + L.dur.toFixed(2) + ' с · ' + L.vol.toFixed(2);
+}
+
+function plural(n){ return n === 1 ? 'слой' : (n < 5 ? 'слоя' : 'слоёв'); }
+
+function updateSummary(){
+  const layers = state.slots[state.currentSlot];
+  document.querySelectorAll('#layerList .layer').forEach((row, i) => {
+    if (layers[i]) row.querySelector('.sum').textContent = layerSummary(layers[i]);
+  });
+  let maxd = 0; layers.forEach(L => maxd = Math.max(maxd, L.dur));
+  $('slotInfo').textContent = layers.length + ' ' + plural(layers.length) + ' · звучание до ' + maxd.toFixed(2) + ' с';
+}
+
+function renderLayers(){
+  const box = $('layerList'); box.innerHTML = '';
+  const layers = state.slots[state.currentSlot];
+  $('layerCount').textContent = layers.length + '/3';
+  layers.forEach((L, i) => {
+    const row = el('div', 'layer' + (i === state.currentLayer ? ' on' : ''));
+    row.appendChild(el('span', 'idx', String(i + 1).padStart(2, '0')));
+    row.appendChild(el('span', 'tag' + (L.kind === 'noise' ? ' tag-noise' : ''), L.kind));
+    row.appendChild(el('span', 'sum', layerSummary(L)));
+    const del = el('button', 'del'); del.type = 'button'; del.title = 'Удалить слой';
+    del.innerHTML = ICONS.x;
+    if (layers.length <= 1) del.style.visibility = 'hidden';
+    del.addEventListener('click', ev => { ev.stopPropagation(); removeLayer(i); });
+    row.appendChild(del);
+    row.addEventListener('click', () => {
+      if (state.currentLayer === i) return;
+      state.currentLayer = i;
+      renderLayers(); renderParams(); updateExport();
+    });
+    box.appendChild(row);
+  });
+  $('btnAdd').disabled = layers.length >= 3;
+  updateSummary();
+}
+
+function addSlider(box, label, key, min, max, step, L, fmt){
+  const row = el('div', 'param');
+  row.appendChild(el('label', '', label));
+  const inp = document.createElement('input');
+  inp.type = 'range'; inp.min = min; inp.max = max; inp.step = step; inp.value = L[key];
+  inp.setAttribute('aria-label', label);
+  const val = el('span', 'val', fmt(L[key]));
+  inp.addEventListener('input', () => {
+    L[key] = parseFloat(inp.value);
+    val.textContent = fmt(L[key]);
+    updateSummary(); updateExport();
+  });
+  inp.addEventListener('change', () => playSlot());   // автопрослушивание при отпускании
+  row.appendChild(inp); row.appendChild(val);
+  box.appendChild(row);
+}
+
+function addSelect(box, label, key, L){
+  const row = el('div', 'param');
+  row.appendChild(el('label', '', label));
+  const sel = document.createElement('select');
+  ['sine', 'triangle', 'square'].forEach(t => {
+    const o = document.createElement('option');
+    o.value = t; o.textContent = t; if (t === L.type) o.selected = true;
+    sel.appendChild(o);
+  });
+  sel.addEventListener('change', () => {
+    L[key] = sel.value;
+    updateSummary(); updateExport(); playSlot();
+  });
+  row.appendChild(sel); row.appendChild(el('span', 'val', ''));
+  box.appendChild(row);
+}
+
+function renderParams(){
+  const box = $('paramList'); box.innerHTML = '';
+  const L = cur();
+  $('paramHead').textContent = 'слой ' + (state.currentLayer + 1) + ' · ' + L.kind;
+
+  if (L.kind === 'tone'){
+    addSlider(box, 'Частота', 'freq', 50, 1500, 1, L, v => Math.round(v) + ' Гц');
+    addSlider(box, 'Длительность', 'dur', 0.02, 0.5, 0.005, L, v => v.toFixed(2) + ' с');
+    addSlider(box, 'Громкость', 'vol', 0.01, 0.35, 0.005, L, v => v.toFixed(2));
+    addSelect(box, 'Тип волны', 'type', L);
+
+    // чекбокс «спад частоты» + слайдер drop
+    const row = el('div', 'param param-drop');
+    const lab = el('label', 'chk');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = L.dropOn;
+    lab.appendChild(cb); lab.appendChild(el('span', '', 'Спад частоты'));
+    row.appendChild(lab);
+    const inp = document.createElement('input');
+    inp.type = 'range'; inp.min = 0.3; inp.max = 1; inp.step = 0.01; inp.value = L.drop;
+    inp.disabled = !L.dropOn;
+    inp.setAttribute('aria-label', 'drop');
+    const val = el('span', 'val', L.dropOn ? L.drop.toFixed(2) : 'выкл');
+    cb.addEventListener('change', () => {
+      L.dropOn = cb.checked; inp.disabled = !cb.checked;
+      val.textContent = L.dropOn ? L.drop.toFixed(2) : 'выкл';
+      updateExport(); playSlot();
+    });
+    inp.addEventListener('input', () => {
+      L.drop = parseFloat(inp.value);
+      val.textContent = L.drop.toFixed(2);
+      updateExport();
+    });
+    inp.addEventListener('change', () => playSlot());
+    row.appendChild(inp); row.appendChild(val);
+    box.appendChild(row);
+  } else {
+    addSlider(box, 'Фильтр', 'cutoff', 300, 4000, 10, L, v => Math.round(v) + ' Гц');
+    addSlider(box, 'Длительность', 'dur', 0.02, 0.5, 0.005, L, v => v.toFixed(2) + ' с');
+    addSlider(box, 'Громкость', 'vol', 0.01, 0.35, 0.005, L, v => v.toFixed(2));
+  }
+}
+
+function updateExport(){
+  const pre = $('exportCode');
+  pre.textContent = '';
+  const name = state.currentSlot;
+  const code = slotCode(name);
+  pre.appendChild(el('span', 'm', name));
+  pre.appendChild(document.createTextNode(code.slice(name.length)));
+}
+
+function renderWorkspace(){
+  const meta = SLOT_META.find(m => m[0] === state.currentSlot);
+  $('slotName').textContent = meta[0];
+  $('slotDesc').textContent = meta[1];
+  renderLayers(); renderParams(); updateExport();
+}
+
+/* ─────────── операции со слоями ─────────── */
+
+function removeLayer(i){
+  const layers = state.slots[state.currentSlot];
+  if (layers.length <= 1) return;
+  layers.splice(i, 1);
+  if (state.currentLayer >= layers.length) state.currentLayer = layers.length - 1;
+  renderLayers(); renderParams(); updateExport();
+}
+
+function addLayer(){
+  const layers = state.slots[state.currentSlot];
+  if (layers.length >= 3) return;
+  layers.push(state.addKind === 'tone'
+    ? { kind:'tone',  freq:440, dur:0.10, vol:0.15, type:'sine', dropOn:true, drop:0.6 }
+    : { kind:'noise', dur:0.08, vol:0.10, cutoff:1200 });
+  state.currentLayer = layers.length - 1;
+  renderLayers(); renderParams(); updateExport();
+}
+
+/* ─────────── «Случайно»: разумные пределы для UI-звуков ─────────── */
+
+const logRand = (a, b) => Math.exp(Math.log(a) + Math.random() * (Math.log(b) - Math.log(a)));
+const rnd = (a, b, step) => { const v = a + Math.random() * (b - a); return Math.round(v / step) * step; };
+
+function randomize(){
+  const L = cur();
+  if (L.kind === 'tone'){
+    L.freq = Math.round(logRand(70, 900));
+    L.dur  = rnd(0.04, 0.22, 0.005);
+    L.vol  = rnd(0.05, 0.28, 0.01);
+    L.type = ['sine', 'triangle', 'square'][Math.floor(Math.random() * 3)];
+    L.dropOn = Math.random() < 0.75;
+    L.drop = rnd(0.35, 0.90, 0.01);
+  } else {
+    L.cutoff = Math.round(logRand(350, 3800) / 10) * 10;
+    L.dur = rnd(0.03, 0.16, 0.005);
+    L.vol = rnd(0.05, 0.22, 0.01);
+  }
+  renderLayers(); renderParams(); updateExport(); playSlot();
+}
+
+/* ─────────── события ─────────── */
+
+ $('btnPlay').innerHTML = ICONS.play + '<span>Прослушать</span>';
+ $('btnRandom').innerHTML = ICONS.spark + '<span>Случайно</span>';
+ $('btnAdd').innerHTML = ICONS.plus + '<span>слой</span>';
+ $('btnCopyOne').innerHTML = ICONS.copy + '<span>Скопировать код</span>';
+ $('btnCopyAll').innerHTML = ICONS.doc + '<span>Скопировать весь словарь</span>';
+
+ $('btnPlay').addEventListener('click', playSlot);
+ $('btnRandom').addEventListener('click', randomize);
+ $('btnAdd').addEventListener('click', addLayer);
+
+ $('segKind').querySelectorAll('button').forEach(b => {
+  b.addEventListener('click', () => {
+    state.addKind = b.dataset.k;
+    $('segKind').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  });
+});
+
+ $('btnCopyOne').addEventListener('click', () => {
+  const name = state.currentSlot;
+  copyText(slotCode(name),
+    'Метод «' + name + '» скопирован — вставьте его вместо одноимённого в Snd',
+    'метода «' + name + '»');
+});
+
+ $('btnCopyAll').addEventListener('click', () => {
+  copyText(dictCode(), 'Словарь Snd скопирован целиком — 8 методов', 'всего словаря Snd');
+});
+
+ $('modalClose').addEventListener('click', closeModal);
+ $('modalSelect').addEventListener('click', () => { $('modalText').focus(); $('modalText').select(); });
+ $('modal').addEventListener('click', e => { if (e.target === $('modal')) closeModal(); });
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('modal').hidden){ closeModal(); return; }
+  if (e.code === 'Space' && !e.repeat){
+    const t = e.target.tagName;
+    if (t !== 'INPUT' && t !== 'SELECT' && t !== 'TEXTAREA'){
+      e.preventDefault(); playSlot();
+    }
+  }
+});
+
+window.addEventListener('resize', () => { if (!scopeRAF) drawFlat(); });
+
+/* ─────────── старт ─────────── */
+
+renderSlots();
+renderWorkspace();
+drawFlat();
+
+})();
+</script>
+</body>
+</html>

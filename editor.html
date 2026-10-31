@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Редактор уровней · Нонограммы</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#F3ECDC; color:#272119;
+         font:15px/1.5 "Golos Text", system-ui, sans-serif;
+         min-height:100vh; padding:20px; }
+  .wrap { max-width:960px; margin:0 auto; }
+  h1 { font-size:22px; font-weight:800; letter-spacing:1px; }
+  .sub { color:#8A7F68; font-size:13px; margin:4px 0 18px; }
+  .panel { background:#FBF6E9; border:1px solid #D8CDB2; border-radius:12px;
+           padding:18px; margin-bottom:18px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  button { font:600 15px "Golos Text",system-ui; background:#272119; color:#F7F1E0;
+           border:0; border-radius:9px; padding:9px 18px; cursor:pointer; }
+  button.ghost { background:#FBF6E9; color:#272119; border:1.6px solid #D8CDB2; }
+  button:hover { opacity:0.88; }
+  .verdict { font:700 14px "JetBrains Mono",monospace; padding:8px 14px; border-radius:8px; }
+  .ok  { color:#8A9A72; }
+  .bad { color:#B9452C; }
+  .grid-wrap { display:flex; gap:26px; flex-wrap:wrap; }
+  canvas { background:#FDF8EA; border:2px solid #272119; border-radius:4px; cursor:pointer; }
+  .clues { font:700 13px "JetBrains Mono",monospace; color:#272119; }
+  .hint { color:#8A7F68; font-size:12.5px; margin-top:10px; }
+  textarea { width:100%; min-height:230px; resize:vertical; margin-top:10px;
+             background:#FDF8EA; border:1px solid #D8CDB2; border-radius:8px; padding:12px;
+             font:13px/1.5 "JetBrains Mono",monospace; color:#272119; tab-size:2; }
+  textarea:focus { outline:2px solid #B9452C; outline-offset:-1px; }
+  .pstatus { font:600 12.5px "JetBrains Mono",monospace; }
+  .pstatus.ok  { color:#8A9A72; }
+  .pstatus.bad { color:#B9452C; }
+  input[type=radio] { accent-color:#B9452C; }
+  label { cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>РЕДАКТОР УРОВНЕЙ</h1>
+  <div class="sub">инструмент разработчика · рисуй или вставь JSON → проверяй → копируй</div>
+
+  <div class="panel">
+    <div class="row">
+      <b>Размер:</b>
+      <label><input type="radio" name="size" value="5"> 5×5</label>
+      <label><input type="radio" name="size" value="10" checked> 10×10</label>
+      <label><input type="radio" name="size" value="15"> 15×15</label>
+      <span style="width:14px"></span>
+      <button class="ghost" id="clear">Очистить</button>
+      <button class="ghost" id="fill-crosses">Крест-тест</button>
+      <span class="verdict" id="verdict">—</span>
+    </div>
+    <div class="hint">ЛКМ — закрасить, ПКМ — снять. Под полем — подсказки, как их увидит игрок. Verdict — решение солвера (тот же алгоритм, что ?selfcheck в игре).</div>
+  </div>
+
+  <div class="grid-wrap">
+    <div>
+      <canvas id="cv"></canvas>
+      <div class="clues" id="colclues"></div>
+    </div>
+    <div>
+      <div class="clues" id="rowclues"></div>
+      <div class="hint" style="max-width:260px">
+        <b>Как вставить в игру:</b><br>
+        1. Скопируй JSON.<br>
+        2. В index.html найди массив LEVELS.<br>
+        3. Вставь блок перед закрывающей <b>]</b>, поменяй id и name.<br>
+        4. Открой <b>?selfcheck</b> — убедись, что новый уровень «уникально».<br>
+        5. Пройди его руками.
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:18px">
+    <div class="row" style="justify-content:space-between">
+      <b style="font-size:13px">JSON уровня — вставь, отредактируй, загрузи в поле:</b>
+      <span class="pstatus" id="pstatus"></span>
+    </div>
+    <textarea id="json" spellcheck="false" autocomplete="off"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button id="load">Загрузить в поле</button>
+      <button class="ghost" id="copy">Скопировать JSON</button>
+      <span class="hint" style="margin:0">Ctrl+Enter — быстро загрузить · поле живое: правки сетки обновляют JSON, правки JSON — сетку</span>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+'use strict';
+
+/* ---------- состояние ---------- */
+let size = 10;
+let grid = new Array(size * size).fill(0);   // 0/1
+const meta = { id: 'X', name: 'Уровень', hard: false };
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const ta = document.getElementById('json');
+const st = document.getElementById('pstatus');
+const CELL = 38, PAD = 8;
+
+const PAL = { empty:'#FDF8EA', filled:'#2B251C', line:'#D8CDB2', major:'#272119', frame:'#272119' };
+
+/* доступ из консоли/тестов: window.__ed */
+window.__ed = {
+  get size () { return size; },
+  get grid () { return grid; },
+  get meta () { return meta; }
+};
+
+/* ---------- солвер (копия checkLevel из игры, изолированная) ---------- */
+function cluesOf (lines) {
+  return lines.map(s => {
+    const res = []; let run = 0;
+    for (const ch of s) { if (ch === '1') run++; else { if (run) res.push(run); run = 0; } }
+    if (run) res.push(run);
+    return res.length ? res : [0];
+  });
+}
+function transpose (n) {
+  const cols = [];
+  for (let c = 0; c < n; c++) {
+    let s = '';
+    for (let r = 0; r < n; r++) s += grid[r * n + c] ? '1' : '0';
+    cols.push(s);
+  }
+  return cols;
+}
+function runsOfMask (mask, n) {
+  const runs = []; let run = 0;
+  for (let i = 0; i < n; i++) {
+    if (mask & (1 << i)) run++;
+    else if (run) { runs.push(run); run = 0; }
+  }
+  if (run) runs.push(run);
+  return runs;
+}
+function maskPatterns (n, clue) {
+  const key = n + ':' + clue.join(',');
+  maskPatterns.cache = maskPatterns.cache || {};
+  if (maskPatterns.cache[key]) return maskPatterns.cache[key];
+  const want = (clue.length === 1 && clue[0] === 0) ? '' : clue.join(',');
+  const list = [];
+  for (let m = 0; m < (1 << n); m++)
+    if (runsOfMask(m, n).join(',') === want) list.push(m);
+  return (maskPatterns.cache[key] = list);
+}
+function refineLine (n, clues, known, isRow, li, rep) {
+  if (rep.bad) return false;
+  const ok = [];
+  for (const m of maskPatterns(n, clues[li])) {
+    let good = true;
+    for (let j = 0; j < n; j++) {
+      const k = known[isRow ? li * n + j : j * n + li];
+      if (k !== 2 && ((m >> j) & 1) !== k) { good = false; break; }
+    }
+    if (good) ok.push(m);
+  }
+  if (!ok.length) { rep.bad = true; return false; }
+  let AND = ok[0], OR = ok[0];
+  for (let i = 1; i < ok.length; i++) { AND &= ok[i]; OR |= ok[i]; }
+  let changed = false;
+  for (let j = 0; j < n; j++) {
+    const v = ((AND >> j) & 1) ? 1 : (((OR >> j) & 1) ? 2 : 0);
+    const idx = isRow ? li * n + j : j * n + li;
+    if (v !== 2 && known[idx] === 2) { known[idx] = v; changed = true; }
+  }
+  return changed;
+}
+function propagate (n, rowClues, colClues, known) {
+  const rep = { bad: false };
+  let changed = true;
+  while (changed && !rep.bad) {
+    changed = false;
+    for (let r = 0; r < n; r++) if (refineLine(n, rowClues, known, true, r, rep)) changed = true;
+    for (let c = 0; c < n; c++) if (refineLine(n, colClues, known, false, c, rep)) changed = true;
+  }
+  return rep;
+}
+function countSolutions (n, rowClues, colClues, known, cap) {
+  if (propagate(n, rowClues, colClues, known).bad) return 0;
+  const i = known.indexOf(2);
+  if (i === -1) return 1;
+  let total = 0;
+  for (const v of [0, 1]) {
+    if (total >= cap) break;
+    const clone = known.slice();
+    clone[i] = v;
+    total += countSolutions(n, rowClues, colClues, clone, cap - total);
+  }
+  return total;
+}
+function checkLevel (n) {
+  const rows = [];
+  for (let r = 0; r < n; r++) rows.push(grid.slice(r * n, r * n + n).map(v => v ? '1' : '0').join(''));
+  const rowClues = cluesOf(rows);
+  const colClues = cluesOf(transpose(n));
+  if (rowClues.every(c => c.join() === '0') || colClues.every(c => c.join() === '0'))
+    return { ok: false, text: 'пусто' };
+  const known = new Array(n * n).fill(2);
+  if (propagate(n, rowClues, colClues, known).bad)
+    return { ok: false, text: 'ПРОТИВОРЕЧИЕ' };
+  if (!known.includes(2)) return { ok: true, text: 'уникально · логика' };
+  const cnt = countSolutions(n, rowClues, colClues, known.slice(), 2);
+  if (cnt === 1) return { ok: true, text: 'уникально · перебор' };
+  return { ok: false, text: 'НЕОДНОЗНАЧНО ≥2' };
+}
+
+/* ---------- отрисовка ---------- */
+function redraw () {
+  cv.width = cv.height = PAD * 2 + size * CELL;
+  ctx.fillStyle = PAL.empty;
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) {
+    if (grid[r * size + c]) {
+      ctx.fillStyle = PAL.filled;
+      ctx.fillRect(PAD + c * CELL + 1, PAD + r * CELL + 1, CELL - 2, CELL - 2);
+    }
+  }
+  for (let i = 1; i < size; i++) {
+    const major = i % 5 === 0;
+    ctx.strokeStyle = major ? PAL.major : PAL.line;
+    ctx.lineWidth = major ? 1.6 : 1;
+    ctx.beginPath();
+    ctx.moveTo(PAD + i * CELL, PAD); ctx.lineTo(PAD + i * CELL, PAD + size * CELL);
+    ctx.moveTo(PAD, PAD + i * CELL); ctx.lineTo(PAD + size * CELL, PAD + i * CELL);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = PAL.frame; ctx.lineWidth = 2;
+  ctx.strokeRect(PAD, PAD, size * CELL, size * CELL);
+  updateClues();
+  updateVerdict();
+  updateJson();
+}
+function updateClues () {
+  const rows = [];
+  for (let r = 0; r < size; r++)
+    rows.push(grid.slice(r * size, r * size + size).map(v => v ? '1' : '0').join(''));
+  const rowClues = cluesOf(rows);
+  const colClues = cluesOf(transpose(size));
+  document.getElementById('rowclues').innerHTML =
+    '<b>строки:</b><br>' + rowClues.map((c, i) => (i + 1) + ': ' + c.join(' ')).join('<br>');
+  document.getElementById('colclues').innerHTML =
+    '<b>столбцы:</b><br>' + colClues.map((c, i) => (i + 1) + ': ' + c.join(' ')).join('&nbsp;&nbsp; ');
+}
+function updateVerdict () {
+  const v = checkLevel(size);
+  const el = document.getElementById('verdict');
+  el.textContent = v.text;
+  el.className = 'verdict ' + (v.ok ? 'ok' : 'bad');
+}
+function updateJson () {
+  // пока поле в фокусе — не затираем ручную правку (клик по сетке снимет фокус)
+  if (ta === document.activeElement) return;
+  const lines = [];
+  for (let r = 0; r < size; r++)
+    lines.push(grid.slice(r * size, r * size + size).map(v => v ? '1' : '0').join(''));
+  const obj = { id: meta.id, size: size, name: meta.name };
+  if (meta.hard) obj.hard = true;
+  obj.solution = lines;
+  ta.value = JSON.stringify(obj, null, 2);
+}
+
+/* ---------- загрузка JSON в поле ---------- */
+function setStatus (msg, ok) {
+  st.textContent = msg;
+  st.className = 'pstatus ' + (ok ? 'ok' : 'bad');
+}
+
+// JSON, а на крайний случай — JS-литерал из LEVELS
+// (одинарные кавычки, ключи без кавычек, висячая запятая)
+function parseSource (text) {
+  try { return JSON.parse(text); }
+  catch (e) {}
+  try {
+    const repaired = text
+      .replace(/'/g, '"')                                            // ' -> "
+      .replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":')        // ключи без кавычек
+      .replace(/,(\s*[\]}])/g, '$1');                                // висячая запятая
+    return JSON.parse(repaired);
+  } catch (e) {}
+  return new Function('return (' + text + ')')();   // сложные случаи
+}
+
+function loadJson () {
+  let d;
+  try { d = parseSource(ta.value); }
+  catch (e) { setStatus('JSON не разобран: ' + e.message, false); return; }
+
+  if (!d || typeof d !== 'object' || !Array.isArray(d.solution)) {
+    setStatus('Нужен объект с полем solution — массив строк из 0 и 1', false); return;
+  }
+  const n = d.size;
+  if (!Number.isInteger(n) || n < 2 || n > 15) {
+    setStatus('size должен быть целым от 2 до 15 (в игре: 5 / 10 / 15)', false); return;
+  }
+  if (d.solution.length !== n) {
+    setStatus('solution: строк ' + d.solution.length + ', а size = ' + n, false); return;
+  }
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    const s = (d.solution[i] == null) ? '' : String(d.solution[i]);
+    if (s.length !== n) {
+      setStatus('solution, строка ' + (i + 1) + ': длина ' + s.length + ' ≠ ' + n, false); return;
+    }
+    if (/[^01]/.test(s)) {
+      setStatus('solution, строка ' + (i + 1) + ': только символы 0 и 1', false); return;
+    }
+    rows.push(s);
+  }
+  meta.id = (d.id !== undefined) ? d.id : 'X';
+  meta.name = (typeof d.name === 'string' && d.name.trim()) ? d.name.trim() : 'Уровень';
+  meta.hard = d.hard === true;
+
+  size = n;
+  grid = new Array(n * n).fill(0);
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++)
+    grid[r * n + c] = rows[r][c] === '1' ? 1 : 0;
+
+  const radio = document.querySelector('input[name=size][value="' + n + '"]');
+  if (radio) radio.checked = true;
+  else document.querySelectorAll('input[name=size]').forEach(r => { r.checked = false; });
+
+  ta.blur();                       // поле можно перезаписывать синхронно с сеткой
+  redraw();
+  const filled = grid.reduce((a, v) => a + v, 0);
+  setStatus('загружено: «' + meta.name + '» ' + n + '×' + n + ' · ' + filled + ' клеток'
+    + ([5, 10, 15].includes(n) ? '' : ' · размер нестандартный для игры'), true);
+}
+
+document.getElementById('load').onclick = loadJson;
+ta.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); loadJson(); }
+});
+
+/* ---------- ввод в сетку ---------- */
+function cellAt (e) {
+  const rect = cv.getBoundingClientRect();
+  const scale = cv.width / rect.width;
+  const x = (e.clientX - rect.left) * scale - PAD;
+  const y = (e.clientY - rect.top) * scale - PAD;
+  const c = Math.floor(x / CELL), r = Math.floor(y / CELL);
+  if (c < 0 || c >= size || r < 0 || r >= size) return null;
+  return r * size + c;
+}
+cv.addEventListener('pointerdown', e => {
+  const i = cellAt(e);
+  if (i == null) return;
+  grid[i] = e.button === 2 ? 0 : (grid[i] ? 0 : 1);   // ПКМ — снять
+  redraw();
+});
+cv.addEventListener('contextmenu', e => e.preventDefault());  // меню не мешает
+
+/* ---------- кнопки ---------- */
+document.querySelectorAll('input[name=size]').forEach(r =>
+  r.addEventListener('change', e => {
+    size = +e.target.value;
+    grid = new Array(size * size).fill(0);
+    redraw();
+  }));
+document.getElementById('clear').onclick = () => { grid.fill(0); redraw(); };
+document.getElementById('fill-crosses').onclick = () => {
+  // быстрая заготовка: крест по центру (удобно начать с симметрии)
+  grid.fill(0);
+  const mid = Math.floor(size / 2);
+  for (let i = 0; i < size; i++) {
+    grid[mid * size + i] = 1;
+    grid[i * size + mid] = 1;
+  }
+  redraw();
+};
+document.getElementById('copy').onclick = () => {
+  const text = ta.value;
+  navigator.clipboard.writeText(text)
+    .then(() => {
+      document.getElementById('copy').textContent = 'Скопировано ✓';
+      setTimeout(() => document.getElementById('copy').textContent = 'Скопировать JSON', 1200);
+    })
+    .catch(() => alert('Буфер недоступен (file://) — скопируй текст из поля вручную'));
+};
+
+redraw();
+})();
+</script>
+</body>
+</html>
